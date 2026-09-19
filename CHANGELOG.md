@@ -151,11 +151,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Records.** With no declared file parameters, an argument the run changed
   is an output (a converter's second run named none). A failed run lists only
   the outputs that exist. The repeat script keeps the finished children of a
-  loop script that was killed, and checks the inputs no step writes before
-  step 1.
+  loop script that was killed, and skips, with a message, a step that reads
+  a file no recorded step writes (a datacard written in the editor).
 - **The bash guard** wraps a python call after `until`, `while`, `if` and
-  `time`, and refuses a recorded run that asks for a timeout above Claude
-  Code's ten-minute limit on one shell command.
+  `time`, and refuses a call that asks for a timeout above Claude Code's
+  ten-minute limit on one shell command.
 - **`dsagt-server` waits for running `kb_ingest` and `kb_append` jobs** (up to
   300 s) when the client disconnects; a headless agent's one-server-per-prompt
   pattern cancelled a job started at the end of a prompt.
