@@ -974,36 +974,6 @@ def render_bash(
         lines.append("mkdir -p " + " ".join(_shell_quote(d) for d in output_dirs))
         lines.append("")
 
-    # A file a step reads that no earlier step writes has to be in place
-    # before the script runs: staged data, or a document written outside a
-    # recorded run (a datacard from the editor).  The step that reads one is
-    # skipped with a message when it is absent, so a missing document at the
-    # last step does not stop the data steps before it.
-    produced: list[str] = []
-
-    def covered(path: str) -> bool:
-        return any(
-            path == p
-            or path.startswith(p + "/")
-            or p.startswith(path.rstrip("/") + "/")
-            for p in produced
-        )
-
-    unproduced: dict[int, list[str]] = {}
-    for i, record in enumerate(records):
-        execution = record["execution"]
-        if execution.get("return_code", 0) != 0:
-            continue
-        needs = []
-        for f in execution.get("input_files", []):
-            f = _relative_to_project(f, project_dir)
-            if not covered(f):
-                needs.append(f)
-        if needs:
-            unproduced[i] = needs
-        for f in execution.get("output_files", []):
-            produced.append(_relative_to_project(f, project_dir).rstrip("/"))
-
     written: set[str] = set()
     for i, record in enumerate(records):
         code = record["code_name"] or "ad-hoc run"
@@ -1064,19 +1034,7 @@ def render_bash(
             for f in outputs:
                 if f in written:
                     lines.append(f"rm -f {_shell_quote(f)}")
-            if i in unproduced:
-                tests = " && ".join(f"[ -e {_shell_quote(f)} ]" for f in unproduced[i])
-                missing = ", ".join(unproduced[i])
-                lines.append(f"if {tests}; then")
-                lines.append(f"  {cmd_str}")
-                lines.append("else")
-                lines.append(
-                    f'  echo "step {i + 1} skipped: no recorded step writes {missing}; '
-                    'put it in place and rerun" >&2'
-                )
-                lines.append("fi")
-            else:
-                lines.append(cmd_str)
+            lines.append(cmd_str)
             written.update(outputs)
         lines.append("")
 
