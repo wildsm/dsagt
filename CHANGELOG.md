@@ -148,6 +148,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A second `save_skill` keeps the spec the agent saved.** The argparse-derived
+  spec replaced one that `save_code_spec` had given dependencies or roles;
+  it is now written only when the code does not exist, and `save_code_spec`
+  rewrites the owning skill's usage lines to the stored command. A file a
+  command moved away is an input, not an output.
 - **Records.** With no declared file parameters, an argument the run changed
   is an output (a converter's second run named none). A failed run lists only
   the outputs that exist. The repeat script keeps the finished children of a
