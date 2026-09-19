@@ -526,7 +526,9 @@ def run_and_record(
         rewritten = [
             f
             for f in input_files
-            if derive_inputs and file_hashes.get(f) not in (None, sha256_of(f))
+            if derive_inputs
+            and sha256_of(f) is not None  # still there: a moved file is not written
+            and file_hashes.get(f) not in (None, sha256_of(f))
         ]
         output_files = [
             f

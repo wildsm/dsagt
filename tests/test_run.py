@@ -1217,3 +1217,16 @@ class TestFindingsFromThe0919Runs:
             project_dir=tmp_path,
         )
         assert "skipped" not in bash
+
+
+def test_a_moved_input_is_not_an_output(tmp_path, monkeypatch):
+    """aidrin, codex: `mv a b` recorded a as an output with no hash."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "a.csv").write_text("x\n")
+    records = tmp_path / "trace_archive"
+    run_and_record("", ["mv", "a.csv", "b.csv"], records, log_trace=None)
+    [path] = records.glob("*.json")
+    execution = json.loads(path.read_text())["execution"]
+    assert execution["input_files"] == ["a.csv"]
+    assert execution["output_files"] == ["b.csv"]
+    assert set(execution["file_hashes"]) == {"a.csv", "b.csv"}
