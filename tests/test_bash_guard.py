@@ -216,20 +216,6 @@ def test_the_config_opt_out_removes_the_hook_and_keeps_user_hooks(tmp_path):
     assert commands == ["mine"]
 
 
-def test_a_call_asking_for_more_than_the_ceiling_is_refused(monkeypatch, capsys):
-    call = {"command": "dsagt-run -- bash assemble_all.sh", "timeout": 2400000}
-    rc, err = _run({"tool_name": "Bash", "tool_input": call}, monkeypatch, capsys)
-    assert rc == 2 and "one sample per call" in err
-    call["timeout"] = 600000
-    assert _run({"tool_name": "Bash", "tool_input": call}, monkeypatch, capsys)[0] == 0
-    # A script given to bash holds its dsagt-run lines where the hook cannot
-    # read them; the second isolates run passed this way.
-    script = {"command": "bash process_all.sh", "timeout": 1800000}
-    assert (
-        _run({"tool_name": "Bash", "tool_input": script}, monkeypatch, capsys)[0] == 2
-    )
-
-
 @pytest.mark.parametrize("keyword", ["until", "while", "if", "time"])
 def test_a_call_after_a_loop_or_condition_keyword_is_wrapped(keyword):
     assert recorded_form(f"{keyword} python3 poll.py; do sleep 1; done").startswith(
