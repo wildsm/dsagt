@@ -1167,7 +1167,7 @@ class TestFindingsFromThe0919Runs:
         kept = [r["record_id"] for r in load_pipeline_records(tmp_path)]
         assert kept == ["a-loop-killed", "b-child", "c-loop-done"]
 
-    def test_the_reconstruction_checks_the_inputs_no_step_writes(self, tmp_path):
+    def test_a_step_reading_a_file_no_step_writes_is_guarded(self, tmp_path):
         from dsagt.provenance import render_bash
 
         def record(inputs, outputs):
@@ -1190,5 +1190,30 @@ class TestFindingsFromThe0919Runs:
             {0: [], 1: [0]},
             project_dir=tmp_path,
         )
-        assert "for f in data/raw.csv audit/card.md; do" in bash
-        assert bash.index("missing input") < bash.index("# Step 1")
+        # The step that reads an unproduced file is guarded; data/clean.csv,
+        # which step 1 writes, is not tested for.
+        assert "if [ -e data/raw.csv ]; then" in bash
+        assert "if [ -e audit/card.md ]; then" in bash
+        assert "step 2 skipped: no recorded step writes audit/card.md" in bash
+
+    def test_an_output_directory_covers_the_paths_under_it(self, tmp_path):
+        from dsagt.provenance import render_bash
+
+        def record(inputs, outputs):
+            return {
+                "record_id": "r",
+                "code_name": "c",
+                "execution": {
+                    "exact_command": ["true"],
+                    "return_code": 0,
+                    "input_files": inputs,
+                    "output_files": outputs,
+                },
+            }
+
+        bash = render_bash(
+            [record([], ["data/assemblies/s1"]), record(["data/assemblies"], [])],
+            {0: [], 1: [0]},
+            project_dir=tmp_path,
+        )
+        assert "skipped" not in bash

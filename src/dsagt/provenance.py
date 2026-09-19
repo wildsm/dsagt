@@ -973,27 +973,34 @@ def render_bash(
         lines.append("")
 
     # A file a step reads that no earlier step writes has to be in place
-    # before the script starts: staged data, or a document written outside a
-    # recorded run.  Checked first, so a missing one stops the script at once
-    # and not at the step that reads it.
-    produced: set[str] = set()
-    required: list[str] = []
-    for record in records:
+    # before the script runs: staged data, or a document written outside a
+    # recorded run (a datacard from the editor).  The step that reads one is
+    # skipped with a message when it is absent, so a missing document at the
+    # last step does not stop the data steps before it.
+    produced: list[str] = []
+
+    def covered(path: str) -> bool:
+        return any(
+            path == p
+            or path.startswith(p + "/")
+            or p.startswith(path.rstrip("/") + "/")
+            for p in produced
+        )
+
+    unproduced: dict[int, list[str]] = {}
+    for i, record in enumerate(records):
         execution = record["execution"]
         if execution.get("return_code", 0) != 0:
             continue
+        needs = []
         for f in execution.get("input_files", []):
             f = _relative_to_project(f, project_dir)
-            if f not in produced and f not in required:
-                required.append(f)
+            if not covered(f):
+                needs.append(f)
+        if needs:
+            unproduced[i] = needs
         for f in execution.get("output_files", []):
-            produced.add(_relative_to_project(f, project_dir))
-    if required:
-        lines.append("# Inputs no recorded step writes; they must exist before step 1")
-        lines.append("for f in " + " ".join(_shell_quote(f) for f in required) + "; do")
-        lines.append('  [ -e "$f" ] || { echo "missing input: $f" >&2; exit 1; }')
-        lines.append("done")
-        lines.append("")
+            produced.append(_relative_to_project(f, project_dir).rstrip("/"))
 
     written: set[str] = set()
     for i, record in enumerate(records):
@@ -1030,6 +1037,14 @@ def render_bash(
             lines.append(f"#   outputs: {', '.join(outputs)}")
         if outside:
             lines.append(f"#   outside the project: {', '.join(outside)}")
+        if snapshot is not None and project_dir is not None:
+            copy = Path(project_dir) / _relative_to_project(
+                snapshot["path"], project_dir
+            )
+            if copy.is_file() and str(project_dir) in copy.read_text(errors="replace"):
+                lines.append(
+                    "#   the script names absolute paths under the original project"
+                )
         if deps[i]:
             dep_names = [records[d]["code_name"] or "ad-hoc run" for d in deps[i]]
             lines.append(f"#   depends: {', '.join(dep_names)}")
@@ -1047,7 +1062,19 @@ def render_bash(
             for f in outputs:
                 if f in written:
                     lines.append(f"rm -f {_shell_quote(f)}")
-            lines.append(cmd_str)
+            if i in unproduced:
+                tests = " && ".join(f"[ -e {_shell_quote(f)} ]" for f in unproduced[i])
+                missing = ", ".join(unproduced[i])
+                lines.append(f"if {tests}; then")
+                lines.append(f"  {cmd_str}")
+                lines.append("else")
+                lines.append(
+                    f'  echo "step {i + 1} skipped: no recorded step writes {missing}; '
+                    'put it in place and rerun" >&2'
+                )
+                lines.append("fi")
+            else:
+                lines.append(cmd_str)
             written.update(outputs)
         lines.append("")
 
