@@ -21,8 +21,8 @@ agent had written into its own skill, a quick comparison as a heredoc or
 ``python -c``, and a script written to the scratchpad after Claude Code's
 shell check refused a multi-line ``python -c``.
 
-A recorded run that asks for a timeout above Claude Code's ten-minute limit
-on one shell command is refused with the two forms that finish: in the
+A call that asks for a timeout above Claude Code's ten-minute limit on one
+shell command is refused with the two forms that finish: in the
 headless runs the agent asked for 40 minutes, the harness ended the loop at
 ten, and 3 of 11 samples were done.
 
@@ -188,10 +188,9 @@ def main(argv: list[str] | None = None) -> int:
     if payload.get("tool_name") != "Bash":
         return 0
     tool_input = payload.get("tool_input") or {}
-    command = tool_input.get("command", "")
-    if (tool_input.get("timeout") or 0) > CEILING_MS and (
-        "dsagt-run" in command or bare_python_call(command)
-    ):
+    if (tool_input.get("timeout") or 0) > CEILING_MS:
+        # Whatever the command: a script given to bash holds its dsagt-run
+        # lines where this hook cannot read them.
         print(
             "dsagt: Claude Code ends one shell command at ten minutes whatever "
             "timeout is asked for, and a run it ends loses its remaining work. "
