@@ -155,15 +155,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   command moved away is an input, not an output.
 - **Records.** With no declared file parameters, an argument the run changed
   is an output (a converter's second run named none). A failed run lists only
-  the outputs that exist. The repeat script keeps the finished children of a
-  loop script that was killed, and skips, with a message, a step that reads
-  a file no recorded step writes (a datacard written in the editor).
+  the outputs that exist. The reconstructed pipeline script keeps the
+  finished children of a loop script that was killed.
 - **The bash guard** wraps a python call after `until`, `while`, `if` and
-  `time`, and refuses a call that asks for a timeout above Claude Code's
-  ten-minute limit on one shell command.
-- **`dsagt-server` waits for running `kb_ingest` and `kb_append` jobs** (up to
-  300 s) when the client disconnects; a headless agent's one-server-per-prompt
-  pattern cancelled a job started at the end of a prompt.
+  `time`.
 - **Concurrent `dsagt init` runs no longer erase the project registry.** A
   run that read `~/dsagt-projects/projects.yaml` while another was writing it
   found an empty file and saved only its own project. The registry is
