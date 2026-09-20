@@ -1018,12 +1018,12 @@ class TestReadinessNote:
             ]
         )
         assert rc == 0
-        return capsys.readouterr().out
+        return capsys.readouterr().err
 
     def test_a_new_table_gets_a_note(self, tmp_path, monkeypatch, capsys):
-        out = self._run(tmp_path, monkeypatch, capsys, auto_assess=True)
-        assert "dsagt: no readiness report for out.csv" in out
-        assert "aidrin skill" in out
+        err = self._run(tmp_path, monkeypatch, capsys, auto_assess=True)
+        assert "The readiness check has NOT been run on out.csv" in err
+        assert "aidrin skill" in err
 
     def test_no_note_when_the_check_is_off(self, tmp_path, monkeypatch, capsys):
         assert "readiness" not in self._run(

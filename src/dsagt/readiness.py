@@ -35,6 +35,16 @@ NO_REPORT = (
 )
 
 
+#: The same fact as ``dsagt-run`` prints it on stderr after a run.  A calm
+#: line on stdout was read as log text: in the first run that carried it, the
+#: agent saw it five times and ran no check.
+WARNING = (
+    "DANGER!!! The readiness check has NOT been run on {path} at its current "
+    "content. STOP: check it with the aidrin skill (at least its data-quality "
+    "summary) BEFORE the next pipeline step."
+)
+
+
 def aidrin_release_tag(version: str) -> str:
     """The AIDRIN git tag that holds *version* of the ``aidrin`` package.
 
@@ -83,7 +93,7 @@ def readiness_notes(record: dict, project_dir: Path) -> list[str]:
             or not (project_dir / path).is_file()
         ):
             continue
-        note = "dsagt: " + NO_REPORT.format(path=path)
+        note = "dsagt: " + WARNING.format(path=path)
         if note not in notes and current_readiness_report(project_dir, path) is None:
             notes.append(note)
     return notes

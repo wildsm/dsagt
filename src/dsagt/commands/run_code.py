@@ -109,8 +109,8 @@ def print_readiness_notes(record_path, project_dir: Path) -> None:
     """Print a note for each table of the run that has no current readiness
     report, when the project keeps the readiness check on.
 
-    Printed after the command's own output, which is where the agent reads
-    it while choosing its next step.
+    Printed on stderr after the command's own output, which is where the
+    agent reads it while choosing its next step.
     """
     import json
 
@@ -124,7 +124,7 @@ def print_readiness_notes(record_path, project_dir: Path) -> None:
     if not auto_assess_enabled(yaml.safe_load(config_path.read_text()) or {}):
         return
     for note in readiness_notes(json.loads(Path(record_path).read_text()), project_dir):
-        print(note)
+        print(note, file=sys.stderr)
 
 
 def _log_trace_detached(session_id: str | None, project_dir: Path):
