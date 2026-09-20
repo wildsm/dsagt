@@ -230,8 +230,11 @@ def files_from_arguments(command: list[str]) -> list[str]:
     ``data.csv``; ``x.py`` is the program, and as an input it would read as
     the product of whichever step wrote it).
     """
-    args = command[1:]
-    if command and Path(command[0]).name in _INTERPRETERS:
+    # A spec with dependencies stores `uv run --with <deps> -- python x.py ...`;
+    # the interpreter and its script are found past that wrapper.
+    inner = _without_uv_wrapper(command)
+    args = inner[1:]
+    if inner and Path(inner[0]).name in _INTERPRETERS:
         script = next((a for a in args if not a.startswith("-")), None)
         if script is not None and _is_file(script):
             args = [a for a in args if a != script]

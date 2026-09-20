@@ -1040,3 +1040,28 @@ def test_a_run_without_a_code_name_is_refused(tmp_path, capsys):
     assert main(["--records-dir", str(tmp_path), "--", "true"]) == 2
     assert "--code <name> is required" in capsys.readouterr().err
     assert list(tmp_path.glob("*.json")) == []
+
+
+def test_the_script_behind_a_uv_wrapper_is_neither_input_nor_output(
+    tmp_path, monkeypatch
+):
+    """Every datacard-validate record listed validate_datacard.py as an output:
+    a code with dependencies runs as `uv run --with ... -- python x.py`, and the
+    interpreter's script was looked for only when the command began with python."""
+    from dsagt.provenance import files_from_arguments, new_files_from_arguments
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "validate.py").write_text("pass\n")
+    (tmp_path / "card.md").write_text("x\n")
+    command = [
+        "uv",
+        "run",
+        "--with",
+        "pyyaml",
+        "--",
+        "python",
+        "validate.py",
+        "card.md",
+    ]
+    assert files_from_arguments(command) == ["card.md"]
+    assert new_files_from_arguments(command, ["card.md"]) == []
