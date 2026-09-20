@@ -138,42 +138,22 @@ quality_tier columns. Save the script under skills/<name>/scripts/ and register 
 
 The agent should search the knowledge base, write the script, and register it via `save_code_spec`.
 
-### 5. Scan the dataset and derive per-micrograph metadata
+### 5. Run the pipeline
 
 ```text
-Run the pipeline on the EMPIAR-10017 dataset in data/cryoem/10017/. First, scan the directory
-to understand what's there, then derive per-micrograph metadata from the selected ground-truth
-particle table in data/cryoem/10017/ground_truth/ (defocus U, defocus V, and defocus angle per
-particle, aggregated per micrograph) into data/cryoem/micrograph_metadata.csv, with a
-registered code.
-```
-
-### 6. Score the micrographs
-
-```text
-Run the quality scoring code on that metadata.
-```
-
-### 7. Merge the particle tables
-
-```text
-Register a code that merges the two ground-truth particle tables in
-data/cryoem/10017/ground_truth/ into data/cryoem/particles.csv, adding a selected flag
-(1 for the selected table, 0 for excluded), and run it.
-```
-
-### 8. Curate the merged table
-
-```text
-Register a code that curates the merged table (keep only rows with selected == 1, drop the
-selected column, write data/cryoem/particles_curated.csv), and run it.
-```
-
-### 9. Summarize the pipeline
-
-```text
-Summarize: how many micrographs fall into each quality tier, and did curation improve the
-particle data?
+Run the pipeline on the EMPIAR-10017 dataset in data/cryoem/10017/:
+1. Scan the directory to understand what's there
+2. Derive per-micrograph metadata from the selected ground-truth particle table in
+   data/cryoem/10017/ground_truth/ (defocus U, defocus V, and defocus angle per particle,
+   aggregated per micrograph) into data/cryoem/micrograph_metadata.csv, with a registered code
+3. Run the quality scoring code on that metadata
+4. Register a code that merges the two ground-truth particle tables in
+   data/cryoem/10017/ground_truth/ into data/cryoem/particles.csv, adding a selected flag
+   (1 for the selected table, 0 for excluded), and run it
+5. Register a code that curates the merged table (keep only rows with selected == 1, drop the
+   selected column, write data/cryoem/particles_curated.csv), and run it
+6. Summarize: how many micrographs fall into each quality tier, and did curation improve
+   the particle data?
 ```
 
 The Lite archive carries no CTF-fit, motion, or ice-thickness columns, so the derived metadata
@@ -219,7 +199,7 @@ curation's removal of it: `outliers` (and `class-imbalance`, if the agent propos
 and `completeness` and `duplicity` confirm the data was structurally sound throughout. The
 curated table is as AI-ready as the selected input, no more.
 
-### 10. Generate a datacard
+### 6. Generate a datacard
 
 ```text
 Use the datacard-generator skill to write a Level 1 datacard for the curated cryo-EM data.
@@ -235,7 +215,7 @@ and the two papers, mark what they do not give as unknown, and ask nothing furth
 the card is written, validate it with the skill's validator and fix what it reports.
 ```
 
-### 11. Reconstruct the pipeline
+### 7. Reconstruct the pipeline
 
 ```text
 Reconstruct the pipeline from the execution records as a bash script and save it as pipeline.sh.
@@ -245,7 +225,7 @@ Reconstruct the pipeline from the execution records as a bash script and save it
 project and returns it; the recorded runs appear in the order they ran, with a failed run kept
 as a comment.
 
-### 12. Review the project artifacts
+### 8. Review the project artifacts
 
 ```text
 Show me the contents of my project folder in a tree format, with the artifacts dsagt recorded during this session highlighted.
