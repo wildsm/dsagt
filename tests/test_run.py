@@ -990,3 +990,42 @@ def test_the_script_behind_a_uv_wrapper_is_neither_input_nor_output(
     ]
     assert files_from_arguments(command) == ["card.md"]
     assert new_files_from_arguments(command, ["card.md"]) == []
+
+
+class TestReadinessNote:
+    """dsagt-run prints the note after the command's output, when the project
+    keeps the readiness check on."""
+
+    def _run(self, tmp_path, monkeypatch, capsys, auto_assess):
+        (tmp_path / ".dsagt").mkdir()
+        (tmp_path / ".dsagt" / "config.yaml").write_text(
+            f"project: t\nreadiness:\n  auto_assess: {str(auto_assess).lower()}\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        write = "open('out.csv', 'w').write('a\\n1\\n')"
+        rc = main(
+            [
+                "--code",
+                "make-table",
+                "--records-dir",
+                str(tmp_path / "trace_archive"),
+                "--output-files",
+                "out.csv",
+                "--",
+                sys.executable,
+                "-c",
+                write,
+            ]
+        )
+        assert rc == 0
+        return capsys.readouterr().out
+
+    def test_a_new_table_gets_a_note(self, tmp_path, monkeypatch, capsys):
+        out = self._run(tmp_path, monkeypatch, capsys, auto_assess=True)
+        assert "dsagt: no readiness report for out.csv" in out
+        assert "aidrin skill" in out
+
+    def test_no_note_when_the_check_is_off(self, tmp_path, monkeypatch, capsys):
+        assert "readiness" not in self._run(
+            tmp_path, monkeypatch, capsys, auto_assess=False
+        )

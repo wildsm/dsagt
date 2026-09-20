@@ -446,12 +446,11 @@ class TestReadinessReports:
             "aidrin",
             ["aidrin", "data-quality", path, "--detail"],
             input_files=[path],
-            output_files=[report],
             record_id=record_id,
             timestamp=ts,
         )
         rec["execution"]["file_hashes"] = {path: digest}
-        rec["execution"]["stdout_file"] = report
+        rec["execution"]["stdout"] = report
         _write_record(project / "trace_archive", rec)
 
     def test_reports_for_a_file_newest_first_with_change_status(self, tmp_path):
@@ -494,6 +493,7 @@ class TestReadinessReports:
         )
         reports = readiness_reports(project, "data/t.csv")
         assert [r["report"] for r in reports] == ["audit/post.json", "audit/pre.json"]
+        assert [r["record_id"] for r in reports] == ["r2", "r1"]
         assert reports[0]["unchanged"] is True
         assert reports[1]["unchanged"] is False
 

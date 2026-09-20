@@ -747,11 +747,12 @@ def readiness_reports(project_dir: Path, path: str) -> list[dict]:
 
     Reads the ``aidrin`` records under ``<project>/trace_archive/`` whose
     inputs name *path* (given relative to the project, or absolute under it)
-    and gives, per run, the report file, the run's start time, and whether
-    the file's content is what it was at the run (``unchanged``), from the
-    record's hash against the file now.  The readiness paragraph asks the
-    agent to call this before a check, so the post report of one stage
-    serves as the pre report of the next.  A record with no
+    and gives, per run, the record's id, the report (what the run printed,
+    which the record holds in full), the run's start time, and whether the
+    file's content is what it was at the run (``unchanged``), from the
+    record's hash against the file now.  A report after which the file is
+    unchanged is current, so the report after one stage is the report before
+    the next.  A record with no
     hash for the file, from a run before hashes were recorded, reports
     ``unchanged`` as ``None``.
     """
@@ -778,12 +779,10 @@ def readiness_reports(project_dir: Path, path: str) -> list[dict]:
             ),
             None,
         )
-        report = execution.get("stdout_file") or next(
-            iter(execution.get("output_files", [])), None
-        )
         reports.append(
             {
-                "report": _relative_to_project(report, project_dir) if report else None,
+                "record_id": record["record_id"],
+                "report": execution.get("stdout", ""),
                 "timestamp": execution.get("timestamp_start"),
                 "command": " ".join(execution.get("exact_command", [])),
                 "unchanged": None if digest is None else digest == current,
@@ -791,6 +790,14 @@ def readiness_reports(project_dir: Path, path: str) -> list[dict]:
         )
     reports.reverse()
     return reports
+
+
+def current_readiness_report(project_dir: Path, path: str) -> dict | None:
+    """The newest report on *path* made while it had its present content, or ``None``."""
+    for report in readiness_reports(project_dir, path):
+        if report["unchanged"] and report["report"]:
+            return report
+    return None
 
 
 def build_dependency_graph(records: list[dict]) -> dict[int, list[int]]:

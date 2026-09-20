@@ -513,3 +513,48 @@ def test_save_code_spec_under_an_installed_skills_name_is_refused(tmp_path):
     assert "is an installed skill" in reply and "vasp-to-isaac-convert" in reply
     assert "body" in (skill / "SKILL.md").read_text()
     assert "executable" not in (skill / "SKILL.md").read_text().split("---")[1]
+
+
+def test_readiness_reports_gives_the_current_report_or_says_how_to_make_one(tmp_path):
+    import asyncio
+    import hashlib
+    import json
+
+    from dsagt.mcp.registry_tools import _handle_readiness_reports
+
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "t.csv").write_text("a\n1\n")
+    (tmp_path / "trace_archive").mkdir()
+
+    def ask():
+        return asyncio.run(
+            _handle_readiness_reports({"path": "data/t.csv"}, runtime_dir=tmp_path)
+        )
+
+    reply = ask()
+    assert reply["current"] is None
+    assert "Check it with the aidrin skill" in reply["next"]
+
+    record = {
+        "record_id": "r1",
+        "code_name": "aidrin",
+        "execution": {
+            "exact_command": ["aidrin", "data-quality", "data/t.csv"],
+            "return_code": 0,
+            "stdout": '{"outliers": 0.03}',
+            "timestamp_start": "2026-01-01T00:00:00Z",
+            "input_files": ["data/t.csv"],
+            "output_files": [],
+            "file_hashes": {"data/t.csv": hashlib.sha256(b"a\n1\n").hexdigest()},
+        },
+    }
+    (tmp_path / "trace_archive" / "aidrin_r1.json").write_text(json.dumps(record))
+    reply = ask()
+    assert reply["current"]["report"] == '{"outliers": 0.03}'
+    assert "next" not in reply
+
+    (tmp_path / "data" / "t.csv").write_text("a\n2\n")
+    reply = ask()
+    assert reply["current"] is None and [r["record_id"] for r in reply["earlier"]] == [
+        "r1"
+    ]

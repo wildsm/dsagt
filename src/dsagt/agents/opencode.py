@@ -121,9 +121,9 @@ class OpenCodeSetup(AgentSetup):
     def owned_artifacts(self, working_dir: Path) -> list[Path]:
         return [working_dir / "AGENTS.md", working_dir / "opencode.json"]
 
-    def write_static(self, working_dir: Path, *, auto_assess: bool = True) -> list[str]:
+    def write_static(self, working_dir: Path) -> list[str]:
         actions: list[str] = []
-        instructions = _load_master_instructions(auto_assess)
+        instructions = _load_master_instructions()
         if instructions:
             action = _write_dsagt_block(working_dir / "AGENTS.md", instructions)
             if action:

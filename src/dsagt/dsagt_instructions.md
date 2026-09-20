@@ -79,8 +79,6 @@ check_[X](output) → audit/step_N_post.json
 
 All check reports are saved to `audit/` for the audit trail.
 
-<!-- readiness-check -->
-
 ### 5. File Organization
 - Each registered code is a self-contained dir under `skills/`, beside the instruction skills: spec at `skills/<name>/SKILL.md`, its scripts in `skills/<name>/scripts/`; a skill whose frontmatter declares an executable is a code
 - All data output goes in a `data/` subdirectory

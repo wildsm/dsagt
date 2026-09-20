@@ -42,6 +42,7 @@ from dsagt.observability import (
     registry_save_code_span,
 )
 from dsagt.provenance import CodeUseIndexer, readiness_reports, reconstruct_pipeline
+from dsagt.readiness import NO_REPORT
 from dsagt.registry import CODES_COLLECTION, CodeRegistry
 
 logger = logging.getLogger(__name__)
@@ -254,7 +255,15 @@ async def _handle_search_registry(
 async def _handle_readiness_reports(arguments: dict, *, runtime_dir: Path) -> dict:
     path = arguments["path"]
     reports = await asyncio.to_thread(readiness_reports, runtime_dir, path)
-    return {"path": path, "reports": reports}
+    current = next((r for r in reports if r["unchanged"] and r["report"]), None)
+    reply = {
+        "path": path,
+        "current": current,
+        "earlier": [r for r in reports if r is not current],
+    }
+    if current is None:
+        reply["next"] = "There is " + NO_REPORT.format(path=path)
+    return reply
 
 
 async def _handle_reconstruct_pipeline(
@@ -534,11 +543,13 @@ def _registry_tools_and_handlers(
         types.Tool(
             name="readiness_reports",
             description=(
-                "The AI-readiness reports on record for a file, newest first: "
-                "each aidrin run whose input was the file, with its report path, "
-                "start time, and whether the file's content is unchanged since "
-                "that run. Call it before running a check; a current report is "
-                "the pre report of the next stage."
+                "The AI-readiness (AIDRIN) report on record for a data file. "
+                "`current` is the report made while the file had its present "
+                "content, with the report's text; when it is null, `next` says "
+                "how to make one. `earlier` lists reports from before the file "
+                "changed. When describing a change in quality, compare a table "
+                "only with its own earlier report or with the report of the "
+                "table it was made from."
             ),
             inputSchema={
                 "type": "object",

@@ -2,31 +2,17 @@
 
 DSAgt is configured at init to run [AIDRIN](https://github.com/idtlab/AIDRIN) (AI Data Readiness Inspector) as the check before and after every tabular pipeline stage; uncheck it on the menu to turn it off. AIDRIN installs with dsagt, and every project gets the `aidrin` skill and an `aidrin` code, so each call the agent makes is an execution record in `trace_archive/` like any other code. A user who asks "is my data AI-ready?" gets the AIDRIN skill's workflow.
 
-The DSAgt instructions request assessments for the effects of data transformations for the downstream application, with reports in `audit/`. For tabular files that check is the `aidrin` skill's quality baseline (completeness, duplicity, outliers), run on the stage's input before the operation and on its output after it. Every stage is measured the same way, so the before/after delta is comparable across stages and projects.
+With the check on, every table a pipeline step reads or writes gets an AIDRIN data-quality report. After a registered code exits, `dsagt-run` prints a note for each table of that run (a CSV, TSV, Parquet, or Excel file) that has no report for its current content:
 
-`dsagt init` asks "Assess tabular data for AI-readiness before and after each data transform?", default yes; when it is yes, the agent's instructions carry one paragraph at the per-operation check rule; when it is no, they do not. The `aidrin` code and skill are present either way.
+```text
+dsagt: no readiness report for data/clean.csv at its current content. Check it with the aidrin skill (at least its data-quality summary) before the next pipeline step.
+```
 
-The inserted paragraph:
+The note is printed where the agent reads a command's output, which is when it chooses its next step. The agent checks the table with the `aidrin` skill through the project's registered `aidrin` code, and that run's execution record is the report: it holds what AIDRIN printed and the hash of the table it read. Once such a record exists the note stops, until the table's content changes. An input the step left unchanged is covered the same way, so the report on one step's output is the report on the next step's input.
 
-> #### AI-readiness check
->
-> For a stage whose input or output is a table, the check is the `aidrin`
-> skill's quality baseline: run it on the file before and after the operation,
-> through the registered `aidrin` code's `executable` (never bare `aidrin`).
-> A table is a CSV, Parquet, Excel, or JSON-records file; an HDF5 or NumPy file
-> counts only once `aidrin summarize` shows it as one table, since AIDRIN reads
-> any HDF5 it can flatten and scores a simulation field as columns. Before a
-> check, call the `readiness_reports` tool on the file: a report from a run
-> after which the file is unchanged is current, and the post report of one
-> stage is the pre report of the next, so an unchanged file is not checked
-> twice. Run the baseline directly; do not ask the user about intent or confirm
-> a plan for these checks (the skill's full workflow is for assessments the user
-> asks for). The run's execution record holds the report: `dsagt-run --code
-> aidrin -- aidrin data-quality <file> --detail` before the operation and after
-> it, then report the per-metric change to the user before proposing the next
-> step. Do not write a custom check for a
-> metric AIDRIN provides. A stage with a table as input or output gets this
-> check; every other stage keeps the check rule above.
+The `readiness_reports` tool gives the same answer on request. For a data file it returns the current report's text, or says there is none and how to make one, and lists the reports from before the file changed. A user who asks "is this file AI-ready?" gets the existing report or a new check. A quality score is comparable between a table's own reports, and between a table and the one it was made from; two unrelated tables' scores are not a trend.
+
+`dsagt init` asks "Assess tabular data for AI-readiness before and after each data transform?", default yes (`--no-readiness` declines). The answer is the `readiness.auto_assess` setting in `.dsagt/config.yaml`, which `dsagt-run` reads at each run; the `aidrin` code and skill are present either way. JSON, HDF5 and NumPy files are tables only sometimes, so they get no note; ask for a check and the skill decides.
 
 ## Try it
 
@@ -59,9 +45,8 @@ Build a curation pipeline for data/sensors.csv in three steps, one at a time:
 Confirm the approach with me before each step.
 ```
 
-At each stage the agent should run the AIDRIN quality baseline on the stage input before the
-operation and on the output after it, write both reports to `audit/`, and show the metric delta
-before proposing the next step. Expected values on this dataset (pre column measured directly):
+After each stage `dsagt-run` notes the tables with no report, and the agent should check them with
+the aidrin skill and show the metric change before proposing the next step. Expected values on this dataset (pre column measured directly):
 
 | Stage | Metric | pre | post |
 |---|---|---|---|
@@ -75,8 +60,8 @@ Afterwards, one more prompt:
 Show me the execution records for this session as a table of step, command, and exit code.
 ```
 
-The table lists one record per baseline run (two per stage) and one per operation, and
-`audit/` holds the six reports. Clean up with `dsagt rm assessment-demo -y`.
+The table lists one record per operation and one per check: the input once, then each stage's
+output, since a stage's output is the next stage's input. Clean up with `dsagt rm assessment-demo -y`.
 
 ## Demos
 
