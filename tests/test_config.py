@@ -695,6 +695,40 @@ class TestAgentRecord:
         # The user manages the shell env; init writes no .dsagt_env.
         assert not (working_dir / ".dsagt_env").exists()
 
+    def test_readiness_paragraph_at_the_check_rule(self, tmp_path):
+        """With the check on, the instructions carry the AI-readiness paragraph
+        inside the per-operation check rule; re-running changes nothing."""
+        from dsagt.readiness import readiness_block
+
+        init_project(
+            "testproj", "claude", exclude=["all"], readiness=readiness_block(True)
+        )
+        config = load_config("testproj")
+        working_dir = tmp_path / "workdir"
+        working_dir.mkdir()
+        static_agent_record(config, "claude", working_dir)
+        text = (working_dir / "CLAUDE.md").read_text()
+        assert text.count("#### AI-readiness check") == 1
+        assert (
+            text.index("### 4. Per-Operation Checks")
+            < text.index("#### AI-readiness check")
+            < text.index("### 5. File Organization")
+        )
+        static_agent_record(config, "claude", working_dir)
+        assert (working_dir / "CLAUDE.md").read_text() == text
+
+    def test_no_readiness_paragraph_when_off(self, tmp_path):
+        from dsagt.readiness import readiness_block
+
+        init_project("off", "claude", exclude=["all"], readiness=readiness_block(False))
+        config = load_config("off")
+        working_dir = tmp_path / "workdir"
+        working_dir.mkdir()
+        static_agent_record(config, "claude", working_dir)
+        text = (working_dir / "CLAUDE.md").read_text()
+        assert "AI-readiness check" not in text
+        assert "readiness-check" not in text
+
     def test_goose_writes_goose_yaml(self, tmp_path):
         config = self._init_and_load("goose")
         working_dir = tmp_path / "workdir"
@@ -799,6 +833,31 @@ class TestAgentRecord:
         # Re-run static: the block is already this text, a no-op.
         assert static_agent_record(config, "claude", working_dir) == []
         assert (working_dir / "CLAUDE.md").read_text() == edited
+
+    def test_static_rewrites_the_block_when_readiness_changes(self, tmp_path):
+        """Turning the AI-readiness check off on re-init reaches the
+        instructions file: the dsagt block is replaced, and the user's own
+        text before and after it is kept."""
+        from dsagt.readiness import readiness_block
+
+        init_project("tog", "claude", exclude=["all"], readiness=readiness_block(True))
+        working_dir = tmp_path / "workdir"
+        working_dir.mkdir()
+        (working_dir / "CLAUDE.md").write_text("# Team notes\n\nBe brief.\n")
+        static_agent_record(load_config("tog"), "claude", working_dir)
+        (working_dir / "CLAUDE.md").write_text(
+            (working_dir / "CLAUDE.md").read_text() + "\n## After\nmore\n"
+        )
+        assert "#### AI-readiness check" in (working_dir / "CLAUDE.md").read_text()
+
+        init_project("tog", "claude", exclude=["all"], readiness=readiness_block(False))
+        actions = static_agent_record(load_config("tog"), "claude", working_dir)
+        text = (working_dir / "CLAUDE.md").read_text()
+        assert actions == [f"Updated DSAgt instructions in {working_dir / 'CLAUDE.md'}"]
+        assert "#### AI-readiness check" not in text
+        assert text.startswith("# Team notes\n\nBe brief.\n")
+        assert text.endswith("<!-- dsagt:end -->\n\n## After\nmore\n")
+        assert text.count("<!-- dsagt:begin -->") == 1
 
     def test_static_files_present_check(self, tmp_path):
         # Used by `dsagt start` to decide whether to call static_agent_record.

@@ -1,17 +1,15 @@
-"""AI-readiness check: an AIDRIN quality report for every table the pipeline reads or writes.
+"""AI-readiness check: the AIDRIN quality baseline around every tabular stage.
 
-When a project keeps the readiness check on (the default at ``dsagt init``),
-``dsagt-run`` prints a note after a registered code exits for each table the
-run read or wrote that has no report for its current content, and the agent
-checks it with the ``aidrin`` base skill through the ``aidrin`` code every
-project registers at init.  The report is that run's execution record, which
-holds what AIDRIN printed; ``provenance.current_readiness_report`` finds it by
-the table's content hash, for the note and for the ``readiness_reports`` tool
-alike.  The note is printed where the agent reads a command's output, which
-is when it chooses its next step; a rule in the instructions was read once at
-the start, and agents skipped the check around most stages.  The ``aidrin``
-package is a dependency of dsagt, and the skill is a base skill fetched at the
-release tag of the installed package.
+The pipeline-builder instructions require a paired check before and after
+every data operation, with reports in ``audit/``.  When a project keeps the
+readiness check on (the default at ``dsagt init``), the check for a tabular
+stage is the ``aidrin`` skill's quality baseline, run through the ``aidrin``
+code that every project registers at init, so each run is an execution
+record.  The setting adds one paragraph to the agent's instructions at the
+per-operation check rule and changes nothing else: the ``aidrin`` package is
+a dependency of dsagt, the skill is a base skill fetched at the release tag
+of the installed package, and AIDRIN's own workflow serves a user who asks
+for an assessment.
 
 The ``readiness`` block of ``.dsagt/config.yaml`` holds the one setting::
 
@@ -21,27 +19,34 @@ The ``readiness`` block of ``.dsagt/config.yaml`` holds the one setting::
 
 from __future__ import annotations
 
-from pathlib import Path
+#: The paragraph :func:`dsagt.agents.base._load_master_instructions` fills in
+#: at the per-operation check rule when the check is on.
+INSTRUCTIONS_PARAGRAPH = """\
+#### AI-readiness check
 
-#: File suffixes read as a table.  A JSON, HDF5 or NumPy file is a table only
-#: sometimes, which the ``aidrin`` skill decides when the user asks for a check.
-TABLE_SUFFIXES = (".csv", ".tsv", ".parquet", ".xlsx", ".xls")
+For a stage whose input or output is a table, the check is the `aidrin`
+skill's quality baseline: run it on the file before and after the operation,
+through the registered `aidrin` code's `executable` (never bare `aidrin`).
+A table is a CSV, Parquet, Excel, or JSON-records file; an HDF5 or NumPy file
+counts only once `aidrin summarize` shows it as one table, since AIDRIN reads
+any HDF5 it can flatten and scores a simulation field as columns. Before a
+check, call the `readiness_reports` tool on the file: a report from a run
+after which the file is unchanged is current, and the post report of one
+stage is the pre report of the next, so an unchanged file is not checked
+twice. Run the baseline directly; do not ask the user about intent or confirm
+a plan for these checks (the skill's full workflow is for assessments the user
+asks for). The run's execution record holds the report: `dsagt-run --code
+aidrin -- aidrin data-quality <file> --detail` before the operation and after
+it, then report the per-metric change to the user before proposing the next
+step. Do not write a custom check for a
+metric AIDRIN provides. A stage with a table as input or output gets this
+check; every other stage keeps the check rule above."""
 
-#: What the agent is told about a table with no current report, by
-#: ``dsagt-run`` after a run and by the ``readiness_reports`` tool on request.
+
+#: What ``readiness_reports`` says for a file with no current report.
 NO_REPORT = (
     "no readiness report for {path} at its current content. Check it with the "
-    "aidrin skill (at least its data-quality summary) before the next pipeline step."
-)
-
-
-#: The same fact as ``dsagt-run`` prints it on stderr after a run.  A calm
-#: line on stdout was read as log text: in the first run that carried it, the
-#: agent saw it five times and ran no check.
-WARNING = (
-    "DANGER!!! The readiness check has NOT been run on {path} at its current "
-    "content. STOP: check it with the aidrin skill (at least its data-quality "
-    "summary) BEFORE the next pipeline step."
+    "aidrin skill (at least its data-quality summary)."
 )
 
 
@@ -71,29 +76,3 @@ def auto_assess_enabled(config: dict) -> bool:
     """Whether the project runs the readiness check; on when the config has no block."""
     block = config.get("readiness") or {}
     return bool(block.get("auto_assess", True))
-
-
-def readiness_notes(record: dict, project_dir: Path) -> list[str]:
-    """The notes ``dsagt-run`` prints after the run *record* describes.
-
-    One per table among the run's inputs and outputs that has no report for
-    its current content.  A failed run and a run of ``aidrin`` itself give
-    none.  An input the run left unchanged still matches the hash a report
-    made now would record, so that report serves as the stage's "before".
-    """
-    from dsagt.provenance import current_readiness_report
-
-    execution = record["execution"]
-    if execution.get("return_code") != 0 or record.get("code_name") == "aidrin":
-        return []
-    notes = []
-    for path in [*execution.get("input_files", []), *execution.get("output_files", [])]:
-        if (
-            not path.lower().endswith(TABLE_SUFFIXES)
-            or not (project_dir / path).is_file()
-        ):
-            continue
-        note = "dsagt: " + WARNING.format(path=path)
-        if note not in notes and current_readiness_report(project_dir, path) is None:
-            notes.append(note)
-    return notes

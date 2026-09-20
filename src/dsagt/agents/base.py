@@ -154,12 +154,25 @@ def _mcp_env_block(
     return block
 
 
-def _load_master_instructions() -> str | None:
-    """Load the master DSAgt instructions, or None if the file is missing."""
+_READINESS_MARKER = "<!-- readiness-check -->\n"
+
+
+def _load_master_instructions(auto_assess: bool = True) -> str | None:
+    """Load the master DSAgt instructions, or None if the file is missing.
+
+    The per-operation check rule carries a marker line; with *auto_assess*
+    the AI-readiness paragraph replaces it, otherwise the line is dropped.
+    """
     if not _INSTRUCTIONS_PATH.exists():
         logger.warning("Master instructions not found: %s", _INSTRUCTIONS_PATH)
         return None
-    return _INSTRUCTIONS_PATH.read_text()
+    from dsagt.readiness import INSTRUCTIONS_PARAGRAPH
+
+    text = _INSTRUCTIONS_PATH.read_text()
+    if _READINESS_MARKER not in text:
+        raise RuntimeError(f"{_INSTRUCTIONS_PATH} has no readiness-check marker")
+    filler = INSTRUCTIONS_PARAGRAPH + "\n" if auto_assess else ""
+    return text.replace(_READINESS_MARKER, filler)
 
 
 def _write_dsagt_block(path: Path, content: str) -> str | None:
@@ -389,12 +402,13 @@ class AgentSetup(ABC):
     native_skills_dir: ClassVar[str | None] = None
 
     @abstractmethod
-    def write_static(self, working_dir: Path) -> list[str]:
+    def write_static(self, working_dir: Path, *, auto_assess: bool = True) -> list[str]:
         """Write the agent's instructions file and any state directories.
 
         Idempotent: if the dsagt marker is already in the instructions
-        file, the write is skipped (preserves user edits).  Returns a list
-        of one-line action descriptions.
+        file, the write is skipped (preserves user edits).  *auto_assess*
+        selects whether the instructions carry the AI-readiness check
+        paragraph.  Returns a list of one-line action descriptions.
         """
 
     @abstractmethod

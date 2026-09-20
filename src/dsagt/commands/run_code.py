@@ -105,28 +105,6 @@ def log_trace(record_path: str, session_id: str | None) -> None:
         mlflow.flush_trace_async_logging()
 
 
-def print_readiness_notes(record_path, project_dir: Path) -> None:
-    """Print a note for each table of the run that has no current readiness
-    report, when the project keeps the readiness check on.
-
-    Printed on stderr after the command's own output, which is where the
-    agent reads it while choosing its next step.
-    """
-    import json
-
-    import yaml
-
-    from dsagt.readiness import auto_assess_enabled, readiness_notes
-
-    config_path = project_dir / ".dsagt" / "config.yaml"
-    if not config_path.exists():
-        return
-    if not auto_assess_enabled(yaml.safe_load(config_path.read_text()) or {}):
-        return
-    for note in readiness_notes(json.loads(Path(record_path).read_text()), project_dir):
-        print(note, file=sys.stderr)
-
-
 def _log_trace_detached(session_id: str | None, project_dir: Path):
     """A ``log_trace`` for :func:`run_and_record` that starts a detached
     process for the trace and returns at once.
@@ -208,14 +186,6 @@ def main(argv: list[str] | None = None) -> int:
         if spec is not None:
             input_files, output_files = file_roles_from_command(spec, command)
 
-    project_dir = records_dir.parent
-    start_trace = _log_trace_detached(session_id, project_dir)
-
-    def after_record(record_path) -> None:
-        print_readiness_notes(record_path, project_dir)
-        if start_trace is not None:
-            start_trace(record_path)
-
     return run_and_record(
         code_name=args.code,
         command=command,
@@ -224,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         record_id=args.record_id,
         input_files=input_files,
         output_files=output_files,
-        log_trace=after_record,
+        log_trace=_log_trace_detached(session_id, records_dir.parent),
     )
 
 

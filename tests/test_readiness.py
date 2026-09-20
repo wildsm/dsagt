@@ -40,73 +40,40 @@ class TestReleaseTag:
         assert re.fullmatch(r"v\d{4}\.\d{2}\.\d+", tag), tag
 
 
-def _record(code, inputs, outputs, rc=0):
-    return {
-        "record_id": "r1",
-        "code_name": code,
-        "execution": {
-            "exact_command": [code],
-            "return_code": rc,
-            "input_files": inputs,
-            "output_files": outputs,
-            "file_hashes": {},
-        },
-    }
+class TestInstructionsParagraph:
+
+    def test_paragraph_sits_at_the_check_rule_when_on(self):
+        text = _load_master_instructions(True)
+        check_rule = text.index("### 4. Per-Operation Checks")
+        paragraph = text.index("#### AI-readiness check")
+        next_rule = text.index("### 5. File Organization")
+        assert check_rule < paragraph < next_rule
+        assert "quality baseline" in text
+        assert "aidrin data-quality <file> --detail" in text
+        # Through the registered code, never the bare binary.
+        assert "registered `aidrin`" in text
+        assert "<!--" not in text
+
+    def test_paragraph_absent_when_off(self):
+        text = _load_master_instructions(False)
+        assert "AI-readiness check" not in text
+        assert "<!--" not in text
+        assert "### 4. Per-Operation Checks" in text
 
 
-class TestReadinessNotes:
-    """What dsagt-run prints after a run, where the agent reads it."""
+def test_docs_page_quotes_the_paragraph_verbatim():
+    """docs/readiness.md shows the inserted paragraph as a quote block; the
+    page drifts from the source unless a test holds them equal."""
+    from pathlib import Path
 
-    def _project(self, tmp_path):
-        (tmp_path / "data").mkdir()
-        (tmp_path / "data" / "in.csv").write_text("a\n1\n")
-        (tmp_path / "data" / "out.csv").write_text("a\n2\n")
-        (tmp_path / "data" / "out.json").write_text("{}")
-        (tmp_path / "trace_archive").mkdir()
-        return tmp_path
+    from dsagt.readiness import INSTRUCTIONS_PARAGRAPH
 
-    def test_one_note_per_table_without_a_report(self, tmp_path):
-        from dsagt.readiness import readiness_notes
-
-        project = self._project(tmp_path)
-        record = _record("convert", ["data/in.csv"], ["data/out.csv", "data/out.json"])
-        notes = readiness_notes(record, project)
-        assert len(notes) == 2  # the JSON output is not read as a table
-        assert "data/in.csv" in notes[0] and "data/out.csv" in notes[1]
-        assert "aidrin skill" in notes[0]
-
-    def test_a_current_report_ends_the_note(self, tmp_path):
-        import hashlib
-        import json
-
-        from dsagt.readiness import readiness_notes
-
-        project = self._project(tmp_path)
-        check = _record("aidrin", ["data/out.csv"], [])
-        check["execution"]["stdout"] = '{"outliers": 0.03}'
-        check["execution"]["timestamp_start"] = "2026-01-01T00:00:00Z"
-        check["execution"]["file_hashes"] = {
-            "data/out.csv": hashlib.sha256(b"a\n2\n").hexdigest()
-        }
-        (project / "trace_archive" / "aidrin_1.json").write_text(json.dumps(check))
-        record = _record("convert", [], ["data/out.csv"])
-        assert readiness_notes(record, project) == []
-        # The table changes; the report is no longer current.
-        (project / "data" / "out.csv").write_text("a\n3\n")
-        assert len(readiness_notes(record, project)) == 1
-
-    def test_a_failed_run_and_an_aidrin_run_give_none(self, tmp_path):
-        from dsagt.readiness import readiness_notes
-
-        project = self._project(tmp_path)
-        assert (
-            readiness_notes(_record("convert", [], ["data/out.csv"], rc=1), project)
-            == []
-        )
-        assert readiness_notes(_record("aidrin", ["data/out.csv"], []), project) == []
-
-
-def test_the_instructions_carry_no_readiness_text():
-    text = _load_master_instructions()
-    assert "readiness" not in text.lower()
-    assert "<!--" not in text
+    page = Path(__file__).resolve().parents[1] / "docs" / "readiness.md"
+    text = page.read_text()
+    start = text.index("> #### AI-readiness check")
+    end = text.index("\n## ", start)
+    quoted = "\n".join(
+        line[2:] if line.startswith("> ") else line[1:]
+        for line in text[start:end].rstrip("\n").split("\n")
+    )
+    assert quoted == INSTRUCTIONS_PARAGRAPH.rstrip("\n")

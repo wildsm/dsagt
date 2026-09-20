@@ -19,7 +19,7 @@ Code registration, execution helpers, dependency installation, and pipeline reco
 | `save_code_spec` | Register a CLI code as `skills/<name>/SKILL.md` (executable wrapped with `dsagt-run` + `uv run --with`), linked into the agent's native skills directory |
 | `install_dependencies` | Install a code's Python dependencies via `uv run --with` |
 | `reconstruct_pipeline` | Render `trace_archive/` as a bash script (in run order, output directories created, recorded stdout files redirected) or a Snakemake workflow; `output` saves it under the project |
-| `readiness_reports` | The AI-readiness report on record for a data file: the current report's text, or how to make one, and the reports from before the file changed |
+| `readiness_reports` | The AI-readiness reports on record for a file, each with whether the file is unchanged since that run |
 
 Codes are markdown files with YAML frontmatter under `<project>/skills/`, beside the instruction skills; the `executable` in the frontmatter is what makes a skill a code. Executables are wrapped with `dsagt-run` for provenance and `uv run --with` for Python dependencies.
 

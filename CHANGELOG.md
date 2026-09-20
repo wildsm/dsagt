@@ -14,13 +14,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of each input before the run and each output after it. When a spec has no
   parameter roles, an argument that is an existing
   file is an input and one that exists only after the run is an output.
-- **The readiness note and `readiness_reports`.** With the AI-readiness
-  check on, `dsagt-run` prints a note after a registered code exits for each
-  table of the run (CSV, TSV, Parquet, Excel) that has no AIDRIN report for
-  its current content, telling the agent to check it with the `aidrin` skill.
-  The report is that check's execution record, found by the table's content
-  hash, so an unchanged table is checked once. The `readiness_reports` tool
-  returns a file's current report text on request, or says how to make one.
+- **`readiness_reports` tool.** The AIDRIN report on record for a data file:
+  the report made while the file had its present content, with the report's
+  text taken from that run's record, or how to make one when there is none,
+  and the reports from before the file changed. The readiness paragraph says
+  to call it before a check, so an unchanged file is checked once, and
+  defines a table (CSV, Parquet, Excel, JSON records; HDF5 or NumPy only once
+  `aidrin summarize` shows one table).
 - **`reconstruct_pipeline(output=...)`** saves the script under the project;
   the bash script creates the recorded output directories first and removes
   a repeated output before the step that rewrites it.
@@ -99,10 +99,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   an upgraded dsagt reaches the agent.
 - The readiness gate is the AI-readiness check, on by default. `dsagt init`
   asks whether to assess tabular data before and after each data transform
-  (`--no-readiness` declines); the answer is the `readiness.auto_assess`
-  setting that `dsagt-run` reads. The instructions carry no readiness text:
-  agents skipped a rule read once at the start around most stages, and act
-  on a note printed with a command's output. The profile, the executable
+  (`--no-readiness` declines); the answer adds one paragraph at the
+  per-operation check rule of the instructions, making the check for a tabular
+  stage the `aidrin` skill's quality baseline. The profile, the executable
   path, the shared install, the `--readiness` flag, and the appended
   instructions block are gone.
 - `datacard-generator` is a base skill: every `dsagt init` installs it from the

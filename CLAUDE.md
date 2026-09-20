@@ -33,7 +33,7 @@ uv run mkdocs build --strict                                # docs, what CI runs
 - **execution record**: the JSON `dsagt-run` writes to `trace_archive/` (`provenance.run_and_record`), indexed into `code_use` by `provenance.CodeUseIndexer`.
 - **explicit memory**, **episodic memory**: `memory.ExplicitMemory`, `memory.MemoryExtractor`.
 - **trace**: one session's spans as plain data (`traces.Trace`). The **periodic pass** (`mcp.server._periodic_pass`, every 45 seconds) runs `traces.TraceCollector`; the **deferred final turn** is the open last turn a periodic pass withholds; **catch-up** re-collects the previous session at startup (`session.catch_up_extraction`).
-- **AI-readiness check**: the default-on AIDRIN quality report for every table a pipeline step reads or writes. `dsagt-run` prints a note for a table with no report at its current content (`readiness.readiness_notes`); the report is the `aidrin` run's execution record, found by content hash (`provenance.current_readiness_report`), which the `readiness_reports` tool also returns; `aidrin` is a registered code in every project (`skills.base_skills`).
+- **AI-readiness check**: the default-on AIDRIN quality baseline around every tabular stage, one paragraph at the per-operation check rule (`readiness.INSTRUCTIONS_PARAGRAPH`); `aidrin` is a registered code in every project (`skills.base_skills`).
 - **store**: the MLflow store traces go to, `MLFLOW_TRACKING_URI` when set, else the project's sqlite file (`observability.resolve_tracking_uri`); traces log to the **experiment** `dsagt-<8 hex>` derived from the project directory, or `mlflow.experiment` from the config (`observability.experiment_name`).
 
 ## Invariants

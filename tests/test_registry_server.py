@@ -555,6 +555,5 @@ def test_readiness_reports_gives_the_current_report_or_says_how_to_make_one(tmp_
 
     (tmp_path / "data" / "t.csv").write_text("a\n2\n")
     reply = ask()
-    assert reply["current"] is None and [r["record_id"] for r in reply["earlier"]] == [
-        "r1"
-    ]
+    assert reply["current"] is None
+    assert [r["record_id"] for r in reply["earlier"]] == ["r1"]

@@ -750,9 +750,9 @@ def readiness_reports(project_dir: Path, path: str) -> list[dict]:
     and gives, per run, the record's id, the report (what the run printed,
     which the record holds in full), the run's start time, and whether the
     file's content is what it was at the run (``unchanged``), from the
-    record's hash against the file now.  A report after which the file is
-    unchanged is current, so the report after one stage is the report before
-    the next.  A record with no
+    record's hash against the file now.  The readiness paragraph asks the
+    agent to call this before a check, so the report after one stage is the
+    report before the next.  A record with no
     hash for the file, from a run before hashes were recorded, reports
     ``unchanged`` as ``None``.
     """
@@ -790,14 +790,6 @@ def readiness_reports(project_dir: Path, path: str) -> list[dict]:
         )
     reports.reverse()
     return reports
-
-
-def current_readiness_report(project_dir: Path, path: str) -> dict | None:
-    """The newest report on *path* made while it had its present content, or ``None``."""
-    for report in readiness_reports(project_dir, path):
-        if report["unchanged"] and report["report"]:
-            return report
-    return None
 
 
 def build_dependency_graph(records: list[dict]) -> dict[int, list[int]]:
