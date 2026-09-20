@@ -8,24 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **An ad-hoc interpreter run keeps a copy of its script.** `dsagt-run --
-  python x.py` copies `x.py` to `trace_archive/scripts/<content hash>_x.py`
-  (up to 1 MB), and a heredoc (`dsagt-run -- python3 - <<'EOF'`) is read from
-  stdin into the same place; the record names the copy under
-  `execution.script_snapshot` and the reconstructed script runs it, so a
-  script written outside the project, edited later, or never a file still
-  replays. The reconstruction lists a step's arguments outside the project
-  in a comment.
-- **Ad-hoc runs and `--stdout`.** `dsagt-run -- <command>` with no `--code`
-  records a run without a spec (empty `code_name`, file prefix `adhoc`), so
-  recording is separate from registration and any command that computes
-  from project data is recorded; `dsagt-run --stdout <path>` writes the
-  command's stdout to the file and records it as an output, which the
-  reconstructed script writes with a redirect. A run ended by SIGTERM,
-  SIGINT, or SIGHUP still writes its record with the signal's status.
+- **`dsagt-run --stdout <path>`** writes the command's stdout to the file and
+  records it as an output, which the reconstructed pipeline script writes
+  with a redirect, so a report from a code that only prints (`aidrin`, the
+  datacard codes) is in the record. A run ended by SIGTERM, SIGINT, or
+  SIGHUP still writes its record with the signal's status.
 - **File hashes in every record.** `execution.file_hashes` holds the SHA-256
   of each input before the run and each output after it. When a spec has no
-  parameter roles, or the run is ad-hoc, an argument that is an existing
+  parameter roles, an argument that is an existing
   file is an input and one that exists only after the run is an output.
 - **`readiness_reports` tool.** The AI-readiness reports on record for a
   file, newest first, each with whether the file is unchanged since that
@@ -82,11 +72,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   conversation (`claude --continue`, `codex exec resume`) logs only its new
   turns, and the final flush emits the last turn only once it holds a
   response.
-- **Section 1 of the instructions** says every command that computes from
-  project data runs under `dsagt-run`, that a document the agent authors is
-  not a run, and that `save_code_spec` is for what is part of the pipeline
-  or will run again. The foreground rule names a background subagent as
-  forbidden beside a background task.
+- **Section 1 of the instructions** defines a pipeline step as a command
+  that produces or transforms a dataset file, and says it runs as a
+  registered code by its stored line. The foreground rule names a background
+  subagent as forbidden beside a background task.
 - `search_registry` lists hits by rank instead of a rank-fusion score.
 - The startup catch-up reuses the server's knowledge base, so one embedder
   serves the session.
