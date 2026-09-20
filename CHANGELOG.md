@@ -41,14 +41,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rewrites the skill's bare invocations to the stored `dsagt-run` line;
   `dsagt init`, `install_skill`, and `save_skill` call it and reply with the
   stored lines.
-- **`dsagt-bash-guard`.** The claude setup writes a `PreToolUse` hook into
-  `.claude/settings.json` that puts a bare `python` call from the Bash tool
-  under `dsagt-run` (`python x.py > out.txt` becomes `dsagt-run --stdout
-  out.txt -- python x.py`) and returns the rewritten command to Claude Code,
-  whose permission rules then apply to it. A call it cannot wrap in place
-  (inside a quoted `$(...)`, after `xargs`, in a `sh -c` string) is refused
-  with the recorded form to use. `claude.bash_guard: false` in
-  `.dsagt/config.yaml` removes the hook at the next `dsagt start`.
 - **`kb_list_collections` and `kb_search(where=...)`.** Every collection is
   listed with its purpose, its metadata keys, and its chunk count, dsagt's
   own (`codes`, `code_use`, `session_memory`, `explicit_memory`) before their
@@ -157,8 +149,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is an output (a converter's second run named none). A failed run lists only
   the outputs that exist. The reconstructed pipeline script keeps the
   finished children of a loop script that was killed.
-- **The bash guard** wraps a python call after `until`, `while`, `if` and
-  `time`.
 - **Concurrent `dsagt init` runs no longer erase the project registry.** A
   run that read `~/dsagt-projects/projects.yaml` while another was writing it
   found an empty file and saved only its own project. The registry is
