@@ -3,7 +3,6 @@ dsagt-run: registered-code execution wrapper for provenance capture.
 
 Usage:
     dsagt-run --code fastp -- fastp -q 20 -l 50 --in1 reads.fq.gz
-    dsagt-run --code aidrin --stdout audit/pre.json -- aidrin data-quality f.csv
 """
 
 import argparse
@@ -35,13 +34,6 @@ def _make_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="RECORD",
         help=argparse.SUPPRESS,  # internal: log the trace of a written record
-    )
-    parser.add_argument(
-        "--stdout",
-        default=None,
-        metavar="PATH",
-        help="Write the command's stdout to this file and record it as an "
-        "output; the terminal gets one line naming the file.",
     )
     parser.add_argument(
         "--session",
@@ -173,15 +165,6 @@ def main(argv: list[str] | None = None) -> int:
     if not command:
         print("dsagt-run: no command specified after '--'", file=sys.stderr)
         return 1
-    if args.stdout is not None and args.stdout in command:
-        # The shell would open the file for the redirect and the command
-        # write it too; the replay of such a record truncates the output.
-        print(
-            f"dsagt-run: --stdout {args.stdout} is also an argument of the command; "
-            "a code that writes its own output file needs no --stdout",
-            file=sys.stderr,
-        )
-        return 2
 
     # The session is resolved here so the record and the trace both carry it.
     session_id = args.session or _current_session_tag_from_cwd()
@@ -211,7 +194,6 @@ def main(argv: list[str] | None = None) -> int:
         record_id=args.record_id,
         input_files=input_files,
         output_files=output_files,
-        stdout_path=args.stdout,
         log_trace=_log_trace_detached(session_id, records_dir.parent),
     )
 

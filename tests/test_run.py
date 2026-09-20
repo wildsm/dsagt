@@ -624,56 +624,6 @@ class TestChildEnv:
 # ---------------------------------------------------------------------------
 
 
-class TestStdoutFile:
-
-    def test_stdout_is_written_to_the_file_and_recorded_as_an_output(
-        self, tmp_path, capsys
-    ):
-        target = tmp_path / "audit" / "report.json"
-        exit_code = main(
-            [
-                "--code",
-                "echo_tool",
-                "--records-dir",
-                str(tmp_path / "records"),
-                "--stdout",
-                str(target),
-                "--",
-                "echo",
-                '{"ok": true}',
-            ]
-        )
-        assert exit_code == 0
-        assert target.read_text() == '{"ok": true}\n'
-        record = json.loads(next((tmp_path / "records").glob("*.json")).read_text())
-        assert record["execution"]["output_files"] == [str(target)]
-        assert record["execution"]["stdout"] == '{"ok": true}\n'
-        # The file holds the output; the terminal gets one line saying so.
-        out = capsys.readouterr().out
-        assert '{"ok": true}' not in out
-        assert str(target) in out
-
-    def test_stdout_file_joins_the_role_outputs(self, tmp_path):
-        target = tmp_path / "report.txt"
-        main(
-            [
-                "--code",
-                "t",
-                "--records-dir",
-                str(tmp_path / "records"),
-                "--output-files",
-                "data/out.csv",
-                "--stdout",
-                str(target),
-                "--",
-                "echo",
-                "x",
-            ]
-        )
-        record = json.loads(next((tmp_path / "records").glob("*.json")).read_text())
-        assert record["execution"]["output_files"] == ["data/out.csv", str(target)]
-
-
 class TestSignal:
 
     def test_a_terminated_run_still_writes_its_record(self, tmp_path):
@@ -793,8 +743,6 @@ class TestArgumentDerivedFiles:
                 "aidrin",
                 "--records-dir",
                 str(project / "trace_archive"),
-                "--stdout",
-                "audit/pre.json",
                 "--",
                 "cat",
                 "data/t.csv",
@@ -804,11 +752,8 @@ class TestArgumentDerivedFiles:
             next((project / "trace_archive").glob("*.json")).read_text()
         )
         assert record["execution"]["input_files"] == ["data/t.csv"]
-        assert record["execution"]["output_files"] == ["audit/pre.json"]
-        assert set(record["execution"]["file_hashes"]) == {
-            "data/t.csv",
-            "audit/pre.json",
-        }
+        assert record["execution"]["output_files"] == []
+        assert set(record["execution"]["file_hashes"]) == {"data/t.csv"}
 
 
 class TestRolesAndArgumentsPerSide:
@@ -917,26 +862,6 @@ class TestRolesTolerateTheUvWrapper:
         without = ["python", "skills/c/scripts/c.py", "--case", "d", "--out", "o.json"]
         assert file_roles_from_command(spec, with_wrapper) == (["d"], ["o.json"])
         assert file_roles_from_command(spec, without) == (["d"], ["o.json"])
-
-
-def test_stdout_that_is_also_an_argument_is_refused(tmp_path, capsys):
-    rc = main(
-        [
-            "--code",
-            "tool",
-            "--records-dir",
-            str(tmp_path),
-            "--stdout",
-            "out.json",
-            "--",
-            "tool",
-            "--output",
-            "out.json",
-        ]
-    )
-    assert rc == 2
-    assert "also an argument" in capsys.readouterr().err
-    assert list(tmp_path.glob("*.json")) == []
 
 
 class TestArgumentScanDetails:

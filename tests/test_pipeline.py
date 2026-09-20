@@ -297,17 +297,6 @@ class TestRenderBashReplays:
         assert "rm -f out.json" not in first
         assert "rm -f out.json\nconv b" in second
 
-    def test_a_stdout_file_is_a_redirect(self):
-        record = _make_record(
-            "aidrin",
-            ["aidrin", "data-quality", "f.csv"],
-            output_files=["audit/pre.json"],
-            record_id="r1",
-        )
-        record["execution"]["stdout_file"] = "audit/pre.json"
-        script = render_bash([record], build_dependency_graph([record]))
-        assert "aidrin data-quality f.csv > audit/pre.json" in script
-
 
 class TestRenderSnakemake:
 

@@ -49,7 +49,7 @@ class TestInstructionsParagraph:
         next_rule = text.index("### 5. File Organization")
         assert check_rule < paragraph < next_rule
         assert "quality baseline" in text
-        assert "audit/step_N_pre.aidrin.json" in text
+        assert "aidrin data-quality <file> --detail" in text
         # Through the registered code, never the bare binary.
         assert "registered `aidrin`" in text
         assert "<!--" not in text

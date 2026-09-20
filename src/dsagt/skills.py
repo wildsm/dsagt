@@ -821,7 +821,7 @@ def rewrite_cli_invocations(skill_dir: Path, pairs: list[tuple[str, str]]) -> in
                     # script under the wrong name; the stored line replaces
                     # the whole wrapper.
                     new = re.sub(
-                        rf"dsagt-run --code \S+ (?:--stdout \S+ )?-- (?:uv run [^\n`]*? -- )?{re.escape(bare)}(?=\s|`|$)",
+                        rf"dsagt-run --code \S+ -- (?:uv run [^\n`]*? -- )?{re.escape(bare)}(?=\s|`|$)",
                         wrapped,
                         new,
                     )

@@ -289,7 +289,7 @@ _FORWARDED_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 
 
 def _run_streaming(
-    command: list[str], stdout_sink=None, *, parent: str | None = None
+    command: list[str], *, parent: str | None = None
 ) -> tuple[int, str, str]:
     """Run *command*, echoing its output as it arrives, and return the exit
     code with the full stdout and stderr.
@@ -297,8 +297,7 @@ def _run_streaming(
     The child's two pipes are read on two threads, so a command that fills
     one while the other is being read cannot block.  Undecodable bytes are
     replaced, so a stray byte in a tool's log cannot lose the record of
-    the run.  *stdout_sink* replaces the terminal as where the child's
-    stdout is copied.  A SIGTERM, SIGINT, or SIGHUP to this process is
+    the run.  A SIGTERM, SIGINT, or SIGHUP to this process is
     forwarded to the child and the call returns the child's exit status
     (negative, the signal number, as ``subprocess`` reports it), so the
     caller writes the record for a run that was ended from outside; a
@@ -326,9 +325,7 @@ def _run_streaming(
     out_lines: list[str] = []
     err_lines: list[str] = []
     readers = [
-        threading.Thread(
-            target=_pump, args=(proc.stdout, stdout_sink or sys.stdout, out_lines)
-        ),
+        threading.Thread(target=_pump, args=(proc.stdout, sys.stdout, out_lines)),
         threading.Thread(target=_pump, args=(proc.stderr, sys.stderr, err_lines)),
     ]
     for reader in readers:
@@ -362,18 +359,13 @@ def run_and_record(
     record_id: str | None = None,
     input_files: list[str] | None = None,
     output_files: list[str] | None = None,
-    stdout_path: str | None = None,
     log_trace=log_execution_trace_if_tracing,
 ) -> int:
     """Execute a command, write an execution record, return the exit code.
 
     The command's output is echoed as it arrives and kept in full for the
     record, so a slow code shows progress and the record still holds
-    everything it printed.  With *stdout_path* the child's stdout goes to that
-    file, which joins the record's output files, and the terminal gets one
-    line naming it; a code that prints its report (``aidrin``, the datacard
-    codes) is then reproducible from the record and the reconstructed
-    script, where a shell redirect in the agent's command is not.
+    everything it printed.
 
     The run loads no tracing library: the record is the provenance, and the
     ``code.execute`` trace is built from the record afterwards by *log_trace*,
@@ -392,8 +384,6 @@ def run_and_record(
     derive_outputs = not output_files
     if derive_inputs:
         input_files = files_from_arguments(command)
-    if stdout_path is not None and stdout_path not in output_files:
-        output_files.append(stdout_path)
     file_hashes = {f: sha256_of(f) for f in input_files}
     parent_record_id = os.environ.get("DSAGT_RUN_PARENT")
     if session_id is None:
@@ -407,15 +397,7 @@ def run_and_record(
     start_perf = time.perf_counter()
 
     try:
-        if stdout_path is None:
-            return_code, stdout, stderr = _run_streaming(command, parent=record_id)
-        else:
-            Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(stdout_path, "w") as sink:
-                return_code, stdout, stderr = _run_streaming(
-                    command, sink, parent=record_id
-                )
-            print(f"dsagt-run: stdout written to {stdout_path} ({len(stdout)} bytes)")
+        return_code, stdout, stderr = _run_streaming(command, parent=record_id)
     except FileNotFoundError:
         return_code = 127
         stdout = ""
@@ -468,8 +450,6 @@ def run_and_record(
             "file_hashes": file_hashes,
         },
     }
-    if stdout_path is not None:
-        record["execution"]["stdout_file"] = stdout_path
     if parent_record_id:
         # A run started by a recorded run (a loop script over samples): the
         # parent's command replays it, so the reconstruction leaves it out.
@@ -893,9 +873,6 @@ def render_bash(
             _relative_to_project(f, project_dir)
             for f in execution.get("output_files", [])
         ]
-        stdout_file = execution.get("stdout_file")
-        if stdout_file:
-            stdout_file = _relative_to_project(stdout_file, project_dir)
 
         lines.append(f"# Step {i + 1}: {code}")
         if inputs:
@@ -907,8 +884,6 @@ def render_bash(
             lines.append(f"#   depends: {', '.join(dep_names)}")
 
         cmd_str = " ".join(_shell_quote(arg) for arg in cmd)
-        if stdout_file:
-            cmd_str += f" > {_shell_quote(stdout_file)}"
         if rc != 0:
             lines.append(f"#   failed with exit code {rc}; kept as a comment")
             lines.append(f"# {cmd_str}")

@@ -8,10 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **`dsagt-run --stdout <path>`** writes the command's stdout to the file and
-  records it as an output, which the reconstructed pipeline script writes
-  with a redirect, so a report from a code that only prints (`aidrin`, the
-  datacard codes) is in the record. A run ended by SIGTERM, SIGINT, or
+- **A run ended by a signal is recorded.** A run ended by SIGTERM, SIGINT, or
   SIGHUP still writes its record with the signal's status.
 - **File hashes in every record.** `execution.file_hashes` holds the SHA-256
   of each input before the run and each output after it. When a spec has no
