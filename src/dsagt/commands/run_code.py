@@ -1,9 +1,8 @@
 """
-dsagt-run: execution wrapper for provenance capture.
+dsagt-run: registered-code execution wrapper for provenance capture.
 
 Usage:
     dsagt-run --code fastp -- fastp -q 20 -l 50 --in1 reads.fq.gz
-    dsagt-run -- python compare.py a.json b.json            # ad-hoc, no spec
     dsagt-run --code aidrin --stdout audit/pre.json -- aidrin data-quality f.csv
 """
 
@@ -26,11 +25,10 @@ def _make_parser() -> argparse.ArgumentParser:
         prog="dsagt-run",
         description="Wrap a code command and capture execution provenance.",
     )
+    # Required for a run; the internal --log-trace mode shares this parser
+    # and has no code, so main() makes the check.
     parser.add_argument(
-        "--code",
-        default=None,
-        help="Name of the registered code being executed; omitted for an "
-        "ad-hoc run, which is recorded without a spec.",
+        "--code", default=None, help="Name of the registered code being executed."
     )
     parser.add_argument(
         "--log-trace",
@@ -165,6 +163,13 @@ def main(argv: list[str] | None = None) -> int:
 
     args, command = _parse_args(argv)
 
+    if not args.code:
+        print(
+            "dsagt-run: --code <name> is required; register the command with "
+            "save_code_spec and run its stored line",
+            file=sys.stderr,
+        )
+        return 2
     if not command:
         print("dsagt-run: no command specified after '--'", file=sys.stderr)
         return 1
@@ -189,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
 
     input_files = _parse_file_list(args.input_files)
     output_files = _parse_file_list(args.output_files)
-    if args.code and not input_files and not output_files:
+    if not input_files and not output_files:
         # The spec's parameter roles name the files; the flags are the
         # override for a command the roles cannot describe.
         from dsagt.registry import CodeRegistry
@@ -199,7 +204,7 @@ def main(argv: list[str] | None = None) -> int:
             input_files, output_files = file_roles_from_command(spec, command)
 
     return run_and_record(
-        code_name=args.code or "",
+        code_name=args.code,
         command=command,
         records_dir=records_dir,
         session_id=session_id,

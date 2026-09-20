@@ -17,7 +17,6 @@ Provenance for code executions.
 
 from __future__ import annotations
 
-import contextlib
 import fcntl
 import hashlib
 import json
@@ -219,91 +218,11 @@ def _is_file(arg: str) -> bool:
 
 _INTERPRETERS = ("python", "python3", "bash", "sh", "zsh", "Rscript", "perl", "node")
 
-#: A script larger than this is left out of the snapshot.
-SCRIPT_SNAPSHOT_LIMIT = 1_000_000
-
-
-def script_argument(command: list[str]) -> int | None:
-    """The index in *command* of the script an interpreter runs, or ``None``.
-
-    ``python x.py data.csv`` gives the index of ``x.py`` and ``python -
-    data.csv`` the index of ``-`` (the script is on stdin); a ``-c``, ``-m``
-    or ``-e`` call carries its program in the command and has no script.  A
-    leading ``uv run ... --`` is looked past.
-    """
-    inner = _without_uv_wrapper(command)
-    if not inner or Path(inner[0]).name not in _INTERPRETERS:
-        return None
-    offset = len(command) - len(inner)
-    for i, arg in enumerate(inner[1:], 1):
-        if arg in ("-c", "-m", "-e"):
-            return None
-        if arg == "-" or not arg.startswith("-"):
-            return offset + i
-    return None
-
-
-def save_script_snapshot(
-    command: list[str], record_id: str, records_dir: Path
-) -> dict | None:
-    """Copy the script an ad-hoc interpreter run executes into the archive.
-
-    An ad-hoc script is the agent's own, often written outside the project
-    or as a heredoc, and edited or gone by the time the pipeline is
-    reconstructed; the copy under ``<records_dir>/scripts/``, named by its
-    content hash, is what the reconstructed script runs.  A heredoc (``python - <<EOF``, or the
-    interpreter with no arguments and stdin piped) is read from stdin here
-    and the run reads the copy in its place.  Returns the record's
-    ``script_snapshot`` entry: the argument index (``None`` when the
-    interpreter had no arguments) and the copy's path.
-    """
-    inner = _without_uv_wrapper(command)
-    index = script_argument(command)
-    from_stdin = (index is not None and command[index] == "-") or (
-        index is None
-        and len(inner) == 1
-        and Path(inner[0]).name in _INTERPRETERS
-        and not sys.stdin.isatty()
-    )
-    if from_stdin:
-        content = sys.stdin.buffer.read()
-        name = "stdin"
-    elif index is not None and _is_file(command[index]):
-        source = Path(command[index])
-        if source.stat().st_size > SCRIPT_SNAPSHOT_LIMIT:
-            return None
-        content = source.read_bytes()
-        name = source.name
-    else:
-        return None
-    scripts_dir = Path(records_dir) / "scripts"
-    scripts_dir.mkdir(parents=True, exist_ok=True)
-    # Named by content, so a script run many times is stored once.
-    copy = scripts_dir / f"{hashlib.sha256(content).hexdigest()[:12]}_{name}"
-    if not copy.exists():
-        copy.write_bytes(content)
-    return {
-        "argument": index,
-        "path": _relative_to_cwd(copy),
-        "stdin": from_stdin,
-    }
-
-
-def _relative_to_cwd(path: Path) -> str:
-    """*path* relative to the working directory when it is under it, as the
-    record's other paths are, so a project that is moved keeps valid records."""
-    resolved = path.resolve()
-    try:
-        return str(resolved.relative_to(Path.cwd().resolve()))
-    except ValueError:
-        return str(resolved)
-
 
 def files_from_arguments(command: list[str]) -> list[str]:
     """The arguments of *command* that are existing files or directories.
 
-    A spec with no parameter roles, or an ad-hoc run with no spec, names no
-    files; an argument that exists when the command starts is one the
+    A spec with no parameter roles names no files; an argument that exists when the command starts is one the
     command reads or overwrites, which is what the dependency graph and the
     readiness reports need to know.  A directory counts (a simulation case,
     a dataset directory); it gets no hash.  The executable is left out, and
@@ -311,8 +230,11 @@ def files_from_arguments(command: list[str]) -> list[str]:
     ``data.csv``; ``x.py`` is the program, and as an input it would read as
     the product of whichever step wrote it).
     """
-    script = script_argument(command)
-    args = [arg for i, arg in enumerate(command) if i > 0 and i != script]
+    args = command[1:]
+    if command and Path(command[0]).name in _INTERPRETERS:
+        script = next((a for a in args if not a.startswith("-")), None)
+        if script is not None and _is_file(script):
+            args = [a for a in args if a != script]
     return [arg for arg in args if _is_file(arg) or _is_dir(arg)]
 
 
@@ -364,11 +286,7 @@ _FORWARDED_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 
 
 def _run_streaming(
-    command: list[str],
-    stdout_sink=None,
-    *,
-    parent: str | None = None,
-    stdin=None,
+    command: list[str], stdout_sink=None, *, parent: str | None = None
 ) -> tuple[int, str, str]:
     """Run *command*, echoing its output as it arrives, and return the exit
     code with the full stdout and stderr.
@@ -377,8 +295,7 @@ def _run_streaming(
     one while the other is being read cannot block.  Undecodable bytes are
     replaced, so a stray byte in a tool's log cannot lose the record of
     the run.  *stdout_sink* replaces the terminal as where the child's
-    stdout is copied, and *stdin* replaces this process's stdin as the
-    child's.  A SIGTERM, SIGINT, or SIGHUP to this process is
+    stdout is copied.  A SIGTERM, SIGINT, or SIGHUP to this process is
     forwarded to the child and the call returns the child's exit status
     (negative, the signal number, as ``subprocess`` reports it), so the
     caller writes the record for a run that was ended from outside; a
@@ -390,7 +307,6 @@ def _run_streaming(
         env["DSAGT_RUN_PARENT"] = parent
     proc = subprocess.Popen(
         command,
-        stdin=stdin,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -450,10 +366,7 @@ def run_and_record(
 
     The command's output is echoed as it arrives and kept in full for the
     record, so a slow code shows progress and the record still holds
-    everything it printed.  An empty *code_name* is an ad-hoc run: a
-    command recorded without a registered spec, so provenance is separate
-    from registration and the agent's cheapest path to running anything is
-    the recorded one.  With *stdout_path* the child's stdout goes to that
+    everything it printed.  With *stdout_path* the child's stdout goes to that
     file, which joins the record's output files, and the terminal gets one
     line naming it; a code that prints its report (``aidrin``, the datacard
     codes) is then reproducible from the record and the reconstructed
@@ -487,26 +400,18 @@ def run_and_record(
         # dir by contract).  ``None`` if no session has been minted yet.
         session_id = _current_session_tag_from_cwd()
 
-    snapshot = (
-        None if code_name else save_script_snapshot(command, record_id, records_dir)
-    )
-
     timestamp_start = datetime.now(timezone.utc).isoformat()
     start_perf = time.perf_counter()
 
     try:
-        with contextlib.ExitStack() as stack:
-            stdin = None
-            if snapshot is not None and snapshot["stdin"]:
-                stdin = stack.enter_context(open(snapshot["path"], "rb"))
-            sink = None
-            if stdout_path is not None:
-                Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
-                sink = stack.enter_context(open(stdout_path, "w"))
-            return_code, stdout, stderr = _run_streaming(
-                command, sink, parent=record_id, stdin=stdin
-            )
-        if stdout_path is not None:
+        if stdout_path is None:
+            return_code, stdout, stderr = _run_streaming(command, parent=record_id)
+        else:
+            Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(stdout_path, "w") as sink:
+                return_code, stdout, stderr = _run_streaming(
+                    command, sink, parent=record_id
+                )
             print(f"dsagt-run: stdout written to {stdout_path} ({len(stdout)} bytes)")
     except FileNotFoundError:
         return_code = 127
@@ -562,8 +467,6 @@ def run_and_record(
     }
     if stdout_path is not None:
         record["execution"]["stdout_file"] = stdout_path
-    if snapshot is not None:
-        record["execution"]["script_snapshot"] = snapshot
     if parent_record_id:
         # A run started by a recorded run (a loop script over samples): the
         # parent's command replays it, so the reconstruction leaves it out.
@@ -580,8 +483,7 @@ def _write_record(record: dict, records_dir: Path) -> Path:
     records_dir.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    prefix = record["code_name"] or "adhoc"
-    filename = f"{prefix}_{ts}_{record['record_id']}.json"
+    filename = f"{record['code_name']}_{ts}_{record['record_id']}.json"
     path = records_dir / filename
 
     path.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
@@ -976,19 +878,9 @@ def render_bash(
 
     written: set[str] = set()
     for i, record in enumerate(records):
-        code = record["code_name"] or "ad-hoc run"
+        code = record["code_name"]
         execution = record["execution"]
-        cmd = list(execution["exact_command"])
-        snapshot = execution.get("script_snapshot")
-        if snapshot is not None:
-            # The archive's copy is the script as it ran; the original may
-            # be edited, outside the project, or a heredoc.
-            if snapshot["argument"] is None:
-                cmd.append(snapshot["path"])
-            else:
-                cmd[snapshot["argument"]] = snapshot["path"]
-        cmd = [_relative_to_project(a, project_dir) for a in cmd]
-        outside = [a for a in cmd[1:] if a.startswith("/")]
+        cmd = [_relative_to_project(a, project_dir) for a in execution["exact_command"]]
         rc = execution.get("return_code", 0)
         inputs = [
             _relative_to_project(f, project_dir)
@@ -1007,18 +899,8 @@ def render_bash(
             lines.append(f"#   inputs:  {', '.join(inputs)}")
         if outputs:
             lines.append(f"#   outputs: {', '.join(outputs)}")
-        if outside:
-            lines.append(f"#   outside the project: {', '.join(outside)}")
-        if snapshot is not None and project_dir is not None:
-            copy = Path(project_dir) / _relative_to_project(
-                snapshot["path"], project_dir
-            )
-            if copy.is_file() and str(project_dir) in copy.read_text(errors="replace"):
-                lines.append(
-                    "#   the script names absolute paths under the original project"
-                )
         if deps[i]:
-            dep_names = [records[d]["code_name"] or "ad-hoc run" for d in deps[i]]
+            dep_names = [records[d]["code_name"] for d in deps[i]]
             lines.append(f"#   depends: {', '.join(dep_names)}")
 
         cmd_str = " ".join(_shell_quote(arg) for arg in cmd)
@@ -1050,7 +932,7 @@ def render_snakemake(records: list[dict], deps: dict[int, list[int]]) -> str:
 
     rule_names = []
     for i, record in enumerate(records):
-        code = record["code_name"] or "adhoc"
+        code = record["code_name"]
         rule_name = f"{code}_{i + 1}"
         rule_names.append(rule_name)
 

@@ -6,7 +6,6 @@ exit code propagation, error handling, and env var fallbacks.
 """
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -483,7 +482,7 @@ class TestMain:
 
         monkeypatch.setattr(subprocess, "Popen", popen)
         records = tmp_path / "trace_archive"
-        assert main(["--records-dir", str(records), "--", "true"]) == 0
+        assert main(["--code", "t", "--records-dir", str(records), "--", "true"]) == 0
 
         [(argv, kw)] = started
         [record] = records.glob("*.json")
@@ -623,26 +622,6 @@ class TestChildEnv:
 # ---------------------------------------------------------------------------
 # Ad-hoc runs, --stdout, and a run ended by a signal
 # ---------------------------------------------------------------------------
-
-
-class TestAdHocRun:
-
-    def test_code_is_optional(self):
-        args, command = _parse_args(["--", "python", "x.py"])
-        assert args.code is None
-        assert command == ["python", "x.py"]
-
-    def test_record_without_a_code(self, tmp_path):
-        """A run with no --code is recorded with an empty code name."""
-        exit_code = main(["--records-dir", str(tmp_path), "--", "echo", "adhoc"])
-        assert exit_code == 0
-        records = list(tmp_path.glob("*.json"))
-        assert len(records) == 1
-        assert records[0].name.startswith("adhoc_")
-        record = json.loads(records[0].read_text())
-        assert record["code_name"] == ""
-        assert record["execution"]["exact_command"] == ["echo", "adhoc"]
-        assert record["execution"]["stdout"] == "adhoc\n"
 
 
 class TestStdoutFile:
@@ -788,23 +767,6 @@ class TestArgumentDerivedFiles:
     """With no spec roles, an argument that is a file is an input, and one
     that exists only after the run is an output."""
 
-    def test_ad_hoc_run_names_its_files(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / "a.csv").write_text("x\n")
-        main(
-            [
-                "--records-dir",
-                str(tmp_path / "records"),
-                "--",
-                "cp",
-                "a.csv",
-                "b.csv",
-            ]
-        )
-        record = json.loads(next((tmp_path / "records").glob("*.json")).read_text())
-        assert record["execution"]["input_files"] == ["a.csv"]
-        assert record["execution"]["output_files"] == ["b.csv"]
-
     def test_a_spec_with_no_roles_falls_back_to_the_arguments(
         self, tmp_path, monkeypatch
     ):
@@ -912,16 +874,18 @@ class TestNestedRuns:
         script = tmp_path / "loop.sh"
         script.write_text(f"#!/bin/bash\n{inner}\n")
         monkeypatch.delenv("DSAGT_RUN_PARENT", raising=False)
-        rc = main(["--records-dir", str(records), "--", "bash", str(script)])
+        rc = main(
+            ["--code", "loop", "--records-dir", str(records), "--", "bash", str(script)]
+        )
         assert rc == 0
         by_name = {
             r.get("code_name"): r
             for r in (json.loads(p.read_text()) for p in records.glob("*.json"))
         }
-        outer, child = by_name[""], by_name["inner"]
+        outer, child = by_name["loop"], by_name["inner"]
         assert "parent_record_id" not in outer
         assert child["parent_record_id"] == outer["record_id"]
-        assert [r["code_name"] for r in load_pipeline_records(records)] == [""]
+        assert [r["code_name"] for r in load_pipeline_records(records)] == ["loop"]
         assert "DSAGT_RUN_PARENT" not in os.environ
 
 
@@ -958,6 +922,8 @@ class TestRolesTolerateTheUvWrapper:
 def test_stdout_that_is_also_an_argument_is_refused(tmp_path, capsys):
     rc = main(
         [
+            "--code",
+            "tool",
             "--records-dir",
             str(tmp_path),
             "--stdout",
@@ -994,117 +960,6 @@ class TestArgumentScanDetails:
             "tool.py",
             "case",
         ]
-
-
-class TestScriptSnapshot:
-    """An ad-hoc interpreter run keeps a copy of its script in the archive."""
-
-    def _record(self, records):
-        [path] = records.glob("*.json")
-        return json.loads(path.read_text())
-
-    def test_a_script_file_is_copied_and_the_reconstruction_runs_the_copy(
-        self, tmp_path, monkeypatch
-    ):
-        from dsagt.provenance import render_bash
-
-        script = tmp_path / "elsewhere" / "count.py"
-        script.parent.mkdir()
-        script.write_text("print(41 + 1)\n")
-        project = tmp_path / "proj"
-        project.mkdir()
-        monkeypatch.chdir(project)
-        records = project / "trace_archive"
-        for _ in range(2):
-            rc = run_and_record(
-                "", [sys.executable, str(script)], records, log_trace=None
-            )
-            assert rc == 0
-
-        record = json.loads(sorted(records.glob("*.json"))[0].read_text())
-        snapshot = record["execution"]["script_snapshot"]
-        # Relative to the project, like the record's other paths, and named
-        # by content, so two runs of one script share one copy.
-        assert snapshot["path"].startswith("trace_archive/scripts/")
-        assert snapshot["path"].endswith("_count.py")
-        assert len(list((records / "scripts").iterdir())) == 1
-        copy = project / snapshot["path"]
-        # The program is neither an input nor an output of the run.
-        assert record["execution"]["input_files"] == []
-        assert record["execution"]["output_files"] == []
-        script.write_text("print('edited later')\n")
-        assert copy.read_text() == "print(41 + 1)\n"
-
-        bash = render_bash([record], {0: []}, project_dir=project)
-        assert f"trace_archive/scripts/{copy.name}" in bash
-        assert str(script) not in bash
-
-    def test_a_heredoc_is_captured_from_stdin(self, tmp_path):
-        records = tmp_path / "trace_archive"
-        done = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "dsagt.commands.run_code",
-                "--records-dir",
-                str(records),
-                "--",
-                sys.executable,
-                "-",
-                "7",
-            ],
-            input="import sys\nprint(int(sys.argv[1]) * 6)\n",
-            capture_output=True,
-            text=True,
-            cwd=tmp_path,
-        )
-        assert done.stdout.strip() == "42"
-        record = self._record(records)
-        snapshot = record["execution"]["script_snapshot"]
-        assert snapshot["stdin"] is True
-        assert (tmp_path / snapshot["path"]).read_text().startswith("import sys")
-
-    def test_a_registered_code_and_a_dash_c_call_have_no_snapshot(self, tmp_path):
-        script = tmp_path / "x.py"
-        script.write_text("pass\n")
-        records = tmp_path / "trace_archive"
-        run_and_record("x", [sys.executable, str(script)], records, log_trace=None)
-        run_and_record("", [sys.executable, "-c", "pass"], records, log_trace=None)
-        for path in records.glob("*.json"):
-            assert "script_snapshot" not in json.loads(path.read_text())["execution"]
-        assert not (records / "scripts").exists()
-
-
-class TestOutsideTheProject:
-
-    def test_the_reconstruction_names_an_argument_outside_the_project(self, tmp_path):
-        from dsagt.provenance import render_bash
-
-        record = {
-            "record_id": "r1",
-            "code_name": "",
-            "execution": {
-                "exact_command": ["wc", "-l", "/data/shared/big.csv"],
-                "return_code": 0,
-                "input_files": [],
-                "output_files": [],
-            },
-        }
-        bash = render_bash([record], {0: []}, project_dir=tmp_path)
-        assert "#   outside the project: /data/shared/big.csv" in bash
-
-
-def test_the_argument_after_a_stdin_script_is_an_input(tmp_path, monkeypatch):
-    from dsagt.provenance import files_from_arguments
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "rows.csv").write_text("a\n")
-    (tmp_path / "x.py").write_text("pass\n")
-    assert files_from_arguments(["python3", "-", "rows.csv"]) == ["rows.csv"]
-    assert files_from_arguments(["python3", "x.py", "rows.csv"]) == ["rows.csv"]
-    assert files_from_arguments(["uv", "run", "--", "python", "x.py", "rows.csv"]) == [
-        "rows.csv"
-    ]
 
 
 class TestFindingsFromThe0919Runs:
@@ -1173,9 +1028,15 @@ def test_a_moved_input_is_not_an_output(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "a.csv").write_text("x\n")
     records = tmp_path / "trace_archive"
-    run_and_record("", ["mv", "a.csv", "b.csv"], records, log_trace=None)
+    run_and_record("move", ["mv", "a.csv", "b.csv"], records, log_trace=None)
     [path] = records.glob("*.json")
     execution = json.loads(path.read_text())["execution"]
     assert execution["input_files"] == ["a.csv"]
     assert execution["output_files"] == ["b.csv"]
     assert set(execution["file_hashes"]) == {"a.csv", "b.csv"}
+
+
+def test_a_run_without_a_code_name_is_refused(tmp_path, capsys):
+    assert main(["--records-dir", str(tmp_path), "--", "true"]) == 2
+    assert "--code <name> is required" in capsys.readouterr().err
+    assert list(tmp_path.glob("*.json")) == []

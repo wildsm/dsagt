@@ -308,12 +308,6 @@ class TestRenderBashReplays:
         script = render_bash([record], build_dependency_graph([record]))
         assert "aidrin data-quality f.csv > audit/pre.json" in script
 
-    def test_an_ad_hoc_run_is_named_as_one(self):
-        record = _make_record("", ["python", "compare.py"], record_id="r1")
-        script = render_bash([record], build_dependency_graph([record]))
-        assert "# Step 1: ad-hoc run" in script
-        assert "python compare.py" in script
-
 
 class TestRenderSnakemake:
 
