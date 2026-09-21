@@ -162,11 +162,10 @@ scores. The measurable gain of this pipeline is in the particle tables.
 
 The merge and the curation are the two data operations on the particle tables, so the prompt
 asks for them as registered codes: each run is then an execution record, and the AI-readiness
-check has a before and an after to measure. The check runs around each tabular operation
-of this pipeline: the metadata derivation, the scoring, the merge, and the curation. The
-merge reads two tables, so its before is those two and `particles.csv` is its after and the
-curation's before. Each check's execution record holds the report, and `dsagt-run` refuses a
-check that repeats one already on record for a file's current content. The gain
+check has something to measure. The check runs on the ground-truth tables as they arrive and
+on the output of each transformation: the derived metadata, the scored table, `particles.csv`,
+and `particles_curated.csv`. Each check's execution record holds the report, and `dsagt-run`
+refuses a check that repeats one already on record for that file's current content. The gain
 post-condition 4 is judged on is in the particle tables. Expected across the curation step:
 
 | Metric | before → after | Reading |
@@ -240,7 +239,7 @@ is. The agent may print the tree through a command; the reply then summarizes it
 1. Knowledge base contains `cryoppp` collection with repo code, docs, and appended papers.
 2. `skills/aidrin/` is present (installed at init); the code registry includes the two CryoPPP codes (the STAR-to-CSV converter and the box-file generator), the metadata-derivation code, and the quality-scoring code.
 3. Quality-scored CSV exists with tier distribution; `particles.csv` (merged) and `particles_curated.csv` (curated) exist with `trace_archive/` records for both operations.
-4. The check ran around each tabular operation, and the reports on `particles.csv` and `particles_curated.csv` show curation returned the outlier score to the selected set's value (~0.041 → ~0.029).
+4. The check ran on the incoming tables and on each transformation's output, and the reports on `particles.csv` and `particles_curated.csv` show curation returned the outlier score to the selected set's value (~0.041 → ~0.029).
 5. A datacard exists for the processed dataset.
 6. `pipeline.sh` exists, saved by `reconstruct_pipeline`.
 7. Code execution records in `trace_archive/` document the full provenance chain, including one record per check run, each naming the table it read.

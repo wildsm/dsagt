@@ -26,15 +26,16 @@ INSTRUCTIONS_PARAGRAPH = """\
 
 For a stage whose input or output is a tabular file (CSV, TSV, Excel, JSON,
 HDF5, Parquet, npz), the check is the `aidrin` skill's quality baseline: run
-it on the file before and after the operation, through the registered
-`aidrin` code's `executable` (never bare `aidrin`). Run the baseline
-directly; do not ask the user about intent or confirm a plan for these checks
+it on the data as it arrives and on the output of each transformation,
+through the registered `aidrin` code's `executable` (never bare `aidrin`).
+A stage's output report is the report its next stage is measured against, so
+each file is checked once. Run the baseline directly; do not ask the user about intent or confirm a plan for these checks
 (the skill's full workflow is for assessments the user asks for). A JSON,
 HDF5, or NumPy file may hold nested or multi-dataset structure that the
 baseline reads as one flat table; say so beside the numbers when you report
 them. The run's execution record holds the report, and `readiness_reports`
 returns the one on record for a file; `dsagt-run` refuses a check that
-repeats one already on record for the file's current content. Report the
+repeats one already on record for that file's current content. Report the
 per-metric change to the user before proposing the next step, comparing a
 table with its own earlier report or with the report of the table it was made
 from. Do not write a custom check for a metric AIDRIN provides. A stage with

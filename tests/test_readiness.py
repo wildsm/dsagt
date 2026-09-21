@@ -51,7 +51,7 @@ class TestInstructionsParagraph:
         assert "quality baseline" in text
         assert "tabular file (CSV, TSV, Excel, JSON,\nHDF5, Parquet, npz)" in text
         # Through the registered code, never the bare binary.
-        assert "registered\n`aidrin` code's `executable`" in text
+        assert "the registered `aidrin` code's `executable`" in text
         assert "<!--" not in text
 
     def test_paragraph_absent_when_off(self):
