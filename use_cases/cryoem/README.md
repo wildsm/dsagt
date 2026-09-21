@@ -174,8 +174,7 @@ post-condition 4 is judged on is in the particle tables. Expected across the cur
 | `outliers` (overall) | **0.041 → 0.029** | curation removed ~30% of outliers |
 | `class-imbalance` (Class Number, passthrough) | **22.2 → 11.1** | markedly more balanced |
 
-The reports cover different tables. Read in run order they seem to get worse and then
-recover:
+The reports cover different tables, so the numbers are not a trend:
 
 | Table | `outliers` | `class-imbalance` |
 |---|---|---|
