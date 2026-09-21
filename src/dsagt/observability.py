@@ -1,11 +1,16 @@
 """
 DSAgt observability: first-party span emission over the MLflow store.
 
-DSAGT writes every trace to one store, ``sqlite:///<pdir>/mlflow.db`` by
-default.  Two emission paths share that one store, because MLflow's API
+DSAgt writes every trace to one store: a shared tracking server when
+``MLFLOW_TRACKING_URI`` is set, and ``sqlite:///<pdir>/mlflow.db`` otherwise,
+so a project is self-contained in its directory by default and joins a team's
+server through one variable.  Each project logs to its own experiment, whose
+traces carry the project directory, the dsagt release, the user, and the
+session, which is what keeps one server readable when several projects and
+people log to it.  Two emission paths share the store, because MLflow's API
 separates them:
 
-  * The live tracer (``mlflow.start_span``): first-party DSAGT spans emitted
+  * The live tracer (``mlflow.start_span``): first-party DSAgt spans emitted
     while the MCP server or dsagt-run runs.  Uses MLflow's active-span context
     for auto-nesting and the ``obs`` proxy.  Each trace's root is tagged
     ``dsagt.source`` with the MCP tool category the agent invoked
@@ -21,12 +26,23 @@ separates them:
 
 Layout (top to bottom)
 ----------------------
-  setup        find_project_config · resolve_tracking_uri · init_tracing
+  setup        find_project_config · resolve_tracking_uri · experiment_name
+               init_tracing ─┬─ _ensure_experiment  (describe and tag the
+               │                                     experiment on creation)
+               │             ├─ _version_model_name (a LoggedModel per dsagt
+               │             │                       release, the Version
+               │             │                       column of every trace)
+               │             └─ _bound_remote_retries · _quiet_mlflow_chatter
+               ApiKeyHeaderProvider  (``X-API-Key`` for a gateway, loaded by
+                            MLflow from an entry point in every process)
   live tracer  open_span ─┬─ traced       (decorate a function)
                           ├─ child_span   (open a sub-span)
                           └─ obs          (annotate the open span)
                tagging:   open_span(source=…) calls _attach_trace_metadata
                           (dsagt.source set on the trace's root only)
+               bounding:  truncate · bound  (cut every string and mask a
+                          credential-bearing key before a value reaches the
+                          store; the MCP dispatch shell calls them)
                factories: kb_* · registry_*
                log_execution_trace  (one code.execute trace from an
                             execution record, backdated to the run)
