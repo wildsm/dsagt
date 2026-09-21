@@ -46,11 +46,11 @@ agent_card:
   skills:
     - id: "code_registration"
       name: "Code Registration"
-      description: "Register CLI codes as skill-standard directories (codes/<name>/SKILL.md) with machine-readable parameters; install dependencies via uv; every execution is wrapped with dsagt-run for provenance. Registered codes are also mirrored into the agent's native skills directory for in-context discovery."
+      description: "Register CLI codes as skill-standard directories (skills/<name>/SKILL.md) with machine-readable parameters; a declared Python dependency becomes a uv run --with prefix, and every execution is wrapped with dsagt-run for provenance. Registered codes are also mirrored into the agent's native skills directory for in-context discovery."
       tags: [registry, provenance, mcp, skills]
       examples:
         - "Register this analysis script as a reusable code."
-        - "Install Python dependencies for a custom analysis script."
+        - "Show me every code registered in this project."
       input_modes: ["text/plain"]
       output_modes: ["text/plain", "application/json"]
 
@@ -139,10 +139,10 @@ Scaffolding layer that gives any MCP-compatible agent CLI persistent code regist
 
 DSAgt wraps an unmodified agent CLI with four independently-operable concerns, exposed by one MCP server the agent discovers through the standard MCP tool protocol:
 
-1. **Code Registry** — The agent registers CLI codes as skill-standard directories (`codes/<name>/SKILL.md`, frontmatter carrying executable + parameters); the server handles dependency installation (`uv run --with`) and wraps each stored command with `dsagt-run` for provenance. Discovery is dual-path: semantic search via `search_registry`, plus a mirror into the agent's native skills directory so the exact runnable command is in context at invocation time.
+1. **Code Registry** — The agent registers CLI codes as skill-standard directories (`skills/<name>/SKILL.md`, frontmatter carrying executable + parameters); the server wraps each stored command with `dsagt-run` for provenance and, when the spec declares Python dependencies, `uv run --with`. Discovery is dual-path: semantic search via `search_registry`, plus a mirror into the agent's native skills directory so the exact runnable command is in context at invocation time.
 2. **Knowledge Base** — ChromaDB collections with hybrid dense (sentence-transformers) + sparse (BM25) search and optional cross-encoder reranking. Code specs and selected skill catalogs are indexed at `dsagt init`; per-project collections (code-use records, session memory) fill in during use. Long ingests run as background jobs.
-3. **Provenance** — `dsagt-run` captures every code execution (command, stdout/stderr, exit code, timing, file I/O) to `trace_archive/` and emits spans to the project's serverless MLflow store. `reconstruct_pipeline` renders the archive as a dependency-ordered execution history.
-4. **Observability & Memory** — All self-logging lands in `sqlite:///<project>/mlflow.db` (MLflow's serverless backend — nothing to run). Agent LLM-call traces are recovered post-hoc from the agent's on-disk transcript, uniformly across all five platforms. Explicit memory stores user-confirmed facts; opt-in episodic memory embeds every session turn for recency-weighted recall.
+3. **Provenance** — `dsagt-run` captures every code execution (command, stdout/stderr, exit code, timing, file I/O) to `trace_archive/` and emits spans to the project's MLflow store. `reconstruct_pipeline` renders the archive as a dependency-ordered execution history.
+4. **Observability & Memory** — All self-logging lands in one MLflow store: `MLFLOW_TRACKING_URI` when it names a shared server, else `sqlite:///<project>/mlflow.db`, which needs nothing running. Agent LLM-call traces are recovered post-hoc from the agent's on-disk transcript, uniformly across all five platforms. Explicit memory stores user-confirmed facts; opt-in episodic memory embeds every session turn for recency-weighted recall.
 
 The data layer is agent-platform-agnostic: switching platforms preserves all accumulated knowledge, codes, skills, and traces.
 
@@ -165,9 +165,9 @@ The agent accepts natural-language instructions (text). Outputs include text res
 
 - **Skill ID**: `code_registration`
   **Name**: Code Registration
-  **Description**: Register CLI codes as skill-standard spec directories; install dependencies; wrap executions with `dsagt-run` for provenance; mirror specs into the agent's native skills dir.
+  **Description**: Register CLI codes as skill-standard spec directories; wrap executions with `dsagt-run` for provenance and a declared Python dependency with `uv run --with`; mirror specs into the agent's native skills dir.
   **Tags**: registry, provenance, mcp, skills
-  **Examples**: "Register this analysis script as a reusable code.", "Install Python dependencies for a custom analysis script."
+  **Examples**: "Register this analysis script as a reusable code.", "Show me every code registered in this project."
   **Input/Output Modes**: text/plain → text/plain, application/json
 
 - **Skill ID**: `knowledge_base`
@@ -239,7 +239,7 @@ All 17 tools live on the single `dsagt-server` (stdio), split across four concer
 
 ## Runtime Infrastructure
 
-DSAgt runs locally as a CLI tool. The MCP server is launched as a subprocess by the configured agent platform. There are no services to run: all self-logging goes to a serverless SQLite MLflow store (`sqlite:///<project>/mlflow.db`), browsable on demand with `mlflow ui --backend-store-uri sqlite:///<project>/mlflow.db`.
+DSAgt runs locally as a CLI tool. The MCP server is launched as a subprocess by the configured agent platform. By default there are no services to run: self-logging goes to a serverless SQLite MLflow store (`sqlite:///<project>/mlflow.db`), browsable on demand with `mlflow ui --backend-store-uri sqlite:///<project>/mlflow.db`, and `MLFLOW_TRACKING_URI` sends it to a shared tracking server instead.
 
 ### Hardware
 
