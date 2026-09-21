@@ -70,23 +70,16 @@ When implementing any data operation, follow this hierarchy:
 Exhaust each level before moving to the next.
 
 ### 4. Per-Operation Checks
-Every filter/transform has an associated check code. Run it before AND after:
-```
-check_[X](input) → audit/step_N_pre.json
-operation(input, output)
-check_[X](output) → audit/step_N_post.json
-```
-
-All check reports are saved to `audit/` for the audit trail.
+Every filter or transform has an associated check code. Run it on the data as it arrives and on the output of each transformation. Run the check as a registered code, so what it printed is on its execution record and the record is the audit trail.
 
 <!-- readiness-check -->
 
 ### 5. File Organization
 - Each registered code is a self-contained dir under `skills/`, beside the instruction skills: spec at `skills/<name>/SKILL.md`, its scripts in `skills/<name>/scripts/`; a skill whose frontmatter declares an executable is a code
 - All data output goes in a `data/` subdirectory
-- All audit reports go in `audit/`
+- A report a check writes to a file goes in `audit/`; a report it prints is on its execution record
 - All session artifacts stay within the project directory
-- The session's dsagt artifacts, when the user asks what dsagt recorded: the execution records in `trace_archive/`, the reports in `audit/`, the registered codes and installed skills in `skills/`, the trace store `mlflow.db`, the knowledge base `kb_index/`, and the session state in `.dsagt/`
+- The session's dsagt artifacts, when the user asks what dsagt recorded: the execution records in `trace_archive/`, which hold the checks' reports, the registered codes and installed skills in `skills/`, the trace store `mlflow.db`, the knowledge base `kb_index/`, and the session state in `.dsagt/`
 
 ## INITIAL SETUP PHASE
 

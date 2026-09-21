@@ -807,7 +807,7 @@ class TestAgentRecord:
         assert (working_dir / ".codex-data").is_dir()
         toml = (working_dir / ".codex-data" / "config.toml").read_text()
         assert "[mcp_servers.dsagt.env]" in toml
-        # Project routing comes from dsagt_config.yaml via cwd-walk; the
+        # Project routing comes from .dsagt/config.yaml via cwd-walk; the
         # MCP env block only carries EMBEDDING_* settings.
         assert "EMBEDDING_BACKEND" in toml
 
