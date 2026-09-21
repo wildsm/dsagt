@@ -216,7 +216,7 @@ class TestRunAndRecord:
 
     def test_session_from_state(self, tmp_path, monkeypatch):
         """Session ID falls back to the current tag in ``.dsagt/state.yaml``
-        when not passed — the MCP server mints it there at startup and
+        when not passed: the MCP server mints it there at startup and
         ``dsagt-run`` (cwd == project dir) reads it."""
         from dsagt.session import append_session, write_config_file, build_config
 
@@ -234,7 +234,7 @@ class TestRunAndRecord:
         assert data["session_id"] == "t-1"
 
     def test_explicit_session_overrides_state(self, tmp_path, monkeypatch):
-        """Explicit --session takes precedence over the state-file tag."""
+        """An explicit session_id takes precedence over the state-file tag."""
         from dsagt.session import append_session, write_config_file, build_config
 
         write_config_file(tmp_path, build_config("t", "claude"))
@@ -351,9 +351,9 @@ class TestMain:
         (tmp_path / ".dsagt" / "config.yaml").write_text("project: test\n")
         monkeypatch.chdir(tmp_path)
         # Serverless: init_tracing resolves a sqlite store from the project
-        # dir via MLflow's native provider — no OTLP exporter.  Stub the
-        # resolver to a known sqlite URI so a shell-set MLFLOW_TRACKING_URI
-        # can't redirect the test.
+        # dir via MLflow's native provider.  Stub the resolver to a known
+        # sqlite URI so a shell-set MLFLOW_TRACKING_URI cannot redirect the
+        # test.
         from dsagt import observability as obs_module
 
         cfg = {"project": "test"}
@@ -370,8 +370,8 @@ class TestMain:
 
     def test_trace_root_carries_the_minted_session(self, tmp_path, monkeypatch):
         """The MCP server mints the session into ``.dsagt/state.yaml``; the
-        ``code.execute`` root must carry it, or every execution trace lands
-        in an unbucketed ``(no-session)`` group in ``dsagt info``."""
+        ``code.execute`` root must carry it, or every execution trace falls
+        into an unbucketed ``(no-session)`` group in ``dsagt info``."""
         import mlflow
 
         from dsagt import observability as obs_module
@@ -428,7 +428,7 @@ class TestMain:
         assert run_code._log_trace_detached(tmp_path / "elsewhere") is None
 
     def test_record_files_come_from_the_spec_roles(self, tmp_path, monkeypatch):
-        """Without --input-files/--output-files, dsagt-run reads the spec of
+        """With no declared file parameters, dsagt-run reads the spec of
         --code from the project and records the files its role parameters
         name, so the dependency graph has edges without the agent passing
         the flags."""
@@ -912,6 +912,48 @@ def test_a_moved_input_is_not_an_output(tmp_path, monkeypatch):
 def test_a_run_without_a_code_name_is_refused(tmp_path, capsys):
     """--code is what names the record; argparse requires it."""
     with pytest.raises(SystemExit):
-        main(["--records-dir", str(tmp_path), "--", "true"])
+        main(["--", "true"])
     assert "--code" in capsys.readouterr().err
     assert list(tmp_path.glob("*.json")) == []
+
+
+def test_the_script_behind_a_uv_wrapper_is_neither_input_nor_output(
+    tmp_path, monkeypatch
+):
+    """Every datacard-validate record listed validate_datacard.py as an output:
+    a code with dependencies runs as `uv run --with ... -- python x.py`, and the
+    interpreter's script was looked for only when the command began with python."""
+    from dsagt.provenance import files_from_arguments, new_files_from_arguments
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "validate.py").write_text("pass\n")
+    (tmp_path / "card.md").write_text("x\n")
+    command = [
+        "uv",
+        "run",
+        "--with",
+        "pyyaml",
+        "--",
+        "python",
+        "validate.py",
+        "card.md",
+    ]
+    assert files_from_arguments(command) == ["card.md"]
+    assert new_files_from_arguments(command, ["card.md"]) == []
+
+
+def test_the_dsagt_run_path_imports_nothing_heavy():
+    """dsagt-run pays provenance's import on every recorded command, so the
+    retrieval stack stays behind TYPE_CHECKING and function-scope imports."""
+    import subprocess
+    import sys
+
+    probe = (
+        "import dsagt.provenance, sys; "
+        "print([m for m in ('chromadb', 'torch', 'onnxruntime', 'mlflow') "
+        "if m in sys.modules])"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert done.stdout.strip() == "[]"
