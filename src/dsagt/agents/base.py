@@ -269,7 +269,7 @@ def _mirror_skills_to(target_dir: Path, skill_dirs: list[Path]) -> list[str]:
     is copied and the copy's description truncated, since a link cannot be
     trimmed.  A manifest tracks the names dsagt owns so a later run removes
     skills that were removed upstream and leaves user-authored skills in
-    place.  ``skill_dirs`` should list bundled dirs before project dirs so a
+    place.  ``skill_dirs`` should list built-in dirs before project dirs so a
     project skill wins a name collision (placed last).
     """
     actions: list[str] = []
@@ -393,7 +393,7 @@ class AgentSetup(ABC):
 
     #: Directory (relative to the working dir) the agent natively auto-discovers
     #: ``SKILL.md`` skill folders from.  ``setup_skills`` mirrors installed
-    #: (bundled and project) skills and registered codes here so the agent
+    #: (built-in and project) skills and registered codes here so the agent
     #: discovers and invokes them without an MCP round-trip.  Every supported
     #: agent has one: claude ``.claude/skills``, codex/goose/opencode
     #: ``.agents/skills`` (the cross-agent standard), cline ``.cline/skills``.

@@ -187,7 +187,7 @@ async def _handle_search_registry(
             "code_name for KB-free lookups."
         )
 
-    # One ``codes`` collection holds bundled and registered entries,
+    # One ``codes`` collection holds built-in and registered entries,
     # distinguished by ``metadata.source``.
     results = await asyncio.to_thread(
         kb.search,

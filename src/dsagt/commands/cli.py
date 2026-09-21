@@ -163,8 +163,8 @@ def _collect_settings(args, interactive: bool, existing: dict, pdir: Path | None
     """Resolve the init choices (the 1:1 mirror of the config).
 
     Selection questions: agent platform, packaged KB document *collections*,
-    skill-catalog *sources*, and the episodic-memory opt-in.  The bundled
-    ``tools`` collection is always provisioned.
+    skill-catalog *sources*, and the episodic-memory opt-in.  The built-in
+    ``codes`` collection is always provisioned.
     Project name and folder location are resolved by the caller.  Embedding
     and chunk_size are code defaults.
 
@@ -238,7 +238,7 @@ def _collect_settings(args, interactive: bool, existing: dict, pdir: Path | None
 
     return {
         "agent": agent,
-        # The bundled ``tools`` collection is always provisioned.
+        # The built-in ``codes`` collection is always provisioned.
         "assets": ["codes", *collections, *skill_names],
         "knowledge": {"collections": collections},
         "skills": _skills_block_for(skill_names),
@@ -708,7 +708,7 @@ def main(argv=None):
         nargs="+",
         metavar="ASSET",
         help="Provision the default KB set minus these assets ('all' to "
-        "create the project with no bundled KB content).",
+        "create the project with no built-in KB content).",
     )
     p_init.add_argument(
         "--episodic",
