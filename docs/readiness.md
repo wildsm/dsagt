@@ -2,7 +2,7 @@
 
 DSAgt is configured at init to run [AIDRIN](https://github.com/idtlab/AIDRIN) (AI Data Readiness Inspector) as the check before and after every tabular pipeline stage; uncheck it on the menu to turn it off. AIDRIN installs with dsagt, and every project gets the `aidrin` skill and an `aidrin` code, so each call the agent makes is an execution record in `trace_archive/` like any other code. A user who asks "is my data AI-ready?" gets the AIDRIN skill's workflow.
 
-The DSAgt instructions request assessments for the effects of data transformations for the downstream application, with reports in `audit/`. For tabular files that check is the `aidrin` skill's quality baseline (completeness, duplicity, outliers), run on the stage's input before the operation and on its output after it. Every stage is measured the same way, so the before/after delta is comparable across stages and projects.
+The DSAgt instructions request assessments for the effects of data transformations for the downstream application. For tabular files that check is the `aidrin` skill's quality baseline (completeness, duplicity, outliers), run on the data as it arrives and on the output of each transformation. Every stage is measured the same way, so the change between a table and the one it was derived from is comparable across stages and projects. Each run's report is the text AIDRIN printed, which its execution record holds and `readiness_reports` returns.
 
 `dsagt init` asks "Assess tabular data for AI-readiness before and after each data transform?", default yes; when it is yes, the agent's instructions carry one paragraph at the per-operation check rule; when it is no, they do not. The `aidrin` code and skill are present either way.
 
@@ -52,9 +52,8 @@ Build a curation pipeline for data/sensors.csv in three steps, one at a time:
 Confirm the approach with me before each step.
 ```
 
-At each stage the agent should run the AIDRIN quality baseline on the stage input before the
-operation and on the output after it, write both reports to `audit/`, and show the metric delta
-before proposing the next step. Expected values on this dataset (pre column measured directly):
+At each stage the agent should run the AIDRIN quality baseline on the stage input and on the
+output it produces, and show the metric change before proposing the next step. Expected values on this dataset (pre column measured directly):
 
 | Stage | Metric | pre | post |
 |---|---|---|---|
@@ -68,8 +67,8 @@ Afterwards, one more prompt:
 Show me the execution records for this session as a table of step, command, and exit code.
 ```
 
-The table lists one record per baseline run (two per stage) and one per operation, and
-`audit/` holds the six reports. Clean up with `dsagt rm assessment-demo -y`.
+The table lists one record per baseline run (two per stage) and one per operation, and each
+baseline record holds the report that run printed. Clean up with `dsagt rm assessment-demo -y`.
 
 ## Demos
 
