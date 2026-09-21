@@ -200,18 +200,15 @@ The agent accepts natural-language instructions (text). Outputs include text res
 
 ### Tools and permissions
 
-All 20 tools live on the single `dsagt-server` (stdio), split across four concerns.
+All 17 tools live on the single `dsagt-server` (stdio), split across four concerns.
 
-**Registry (8):**
+**Registry (5):**
 
 - `search_registry` — semantic search over registered + bundled code specs. Side effects: reads data.
 - `get_registry` — list every registered code with its MCP-compatible schema. Side effects: reads data.
-- `save_code_spec` — register a code as `codes/<name>/SKILL.md` (executable auto-wrapped with `dsagt-run` + `uv run --with`). Side effects: writes to the project dir; indexes into ChromaDB.
-- `install_dependencies` — install a code's Python dependencies via uv. Side effects: executes uv, network calls (PyPI).
-- `run_command` — execute a shell command with a timeout. Side effects: executes subprocesses.
-- `read_file` — read a file from disk. Side effects: reads data.
-- `http_request` — issue an HTTP(S) request. Side effects: network calls.
+- `save_code_spec` — register a code as `skills/<name>/SKILL.md` (executable auto-wrapped with `dsagt-run` + `uv run --with`). Side effects: writes to the project dir; indexes into ChromaDB.
 - `reconstruct_pipeline` — render `trace_archive/` as a dependency-ordered execution history. Side effects: reads data.
+- `readiness_reports` — the AI-readiness reports on record for a data file. Side effects: reads data.
 
 **Knowledge (5):**
 

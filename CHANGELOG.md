@@ -93,8 +93,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   failed re-clone keeps the previous cache, and a set-aside clone a crashed
   sync left behind is never a source.
 - `uv` is a dependency of dsagt: codes with declared Python dependencies run
-  through `uv run --with` and `install_dependencies` installs through `uv pip`,
-  so a `pip install` of dsagt is the whole install.
+  through `uv run --with`, so a `pip install` of dsagt is the whole install.
 - `dsagt-run` appends the directory of its own interpreter to the command's
   PATH, so a CLI that is a dsagt dependency resolves under pipx or
   `uv tool install`, where only dsagt's own commands are linked onto PATH.
@@ -129,7 +128,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   examples.
 - **`run_command`, `read_file`, `http_request`.** Execution in the user's
   environment is `dsagt-run`'s, from the agent's shell; reads are the
-  agent's own tools. The server has 18 tools.
+  agent's own tools.
+- **`install_dependencies`, and the install `save_code_spec` ran for a spec
+  with dependencies.** Both installed into dsagt-server's own interpreter,
+  which is not the environment the agent's shell runs a command in. A code's
+  declared dependencies reach its run through the `uv run --with` prefix in
+  its stored `executable`. The server has 17 tools.
 
 ### Fixed
 
