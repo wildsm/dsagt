@@ -12,7 +12,6 @@ from pathlib import Path
 
 from dsagt.provenance import (
     _current_session_tag_from_cwd,
-    _parse_file_list,
     _resolve_records_dir,
     file_roles_from_command,
     run_and_record,
@@ -43,18 +42,6 @@ def _make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--record-id", default=None, help="Pre-assigned record ID.")
     parser.add_argument(
         "--records-dir", default=None, help="Directory for execution records."
-    )
-    parser.add_argument(
-        "--input-files",
-        default=None,
-        help="Comma-separated input file paths; derived from the spec's "
-        "parameter roles when omitted.",
-    )
-    parser.add_argument(
-        "--output-files",
-        default=None,
-        help="Comma-separated output file paths; derived from the spec's "
-        "parameter roles when omitted.",
     )
     return parser
 
@@ -175,16 +162,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"dsagt-run: {err}", file=sys.stderr)
         return 1
 
-    input_files = _parse_file_list(args.input_files)
-    output_files = _parse_file_list(args.output_files)
-    if not input_files and not output_files:
-        # The spec's parameter roles name the files; the flags are the
-        # override for a command the roles cannot describe.
-        from dsagt.registry import CodeRegistry
+    # The spec's parameter roles name the files the command reads and writes;
+    # each side the roles leave empty is filled from the arguments in
+    # run_and_record.
+    from dsagt.registry import CodeRegistry
 
-        spec = CodeRegistry(runtime_dir=records_dir.parent).get_code(args.code)
-        if spec is not None:
-            input_files, output_files = file_roles_from_command(spec, command)
+    input_files: list[str] = []
+    output_files: list[str] = []
+    spec = CodeRegistry(runtime_dir=records_dir.parent).get_code(args.code)
+    if spec is not None:
+        input_files, output_files = file_roles_from_command(spec, command)
 
     return run_and_record(
         code_name=args.code,

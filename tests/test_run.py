@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 from dsagt.provenance import (
-    _parse_file_list,
     _resolve_records_dir,
     _write_record,
     run_and_record,
@@ -45,10 +44,6 @@ class TestParseArgs:
                 "rec-42",
                 "--records-dir",
                 "/tmp/records",
-                "--input-files",
-                "a.fq,b.fq",
-                "--output-files",
-                "out/contigs.fa",
                 "--",
                 "megahit",
                 "-1",
@@ -59,8 +54,6 @@ class TestParseArgs:
         assert args.session == "sess-1"
         assert args.record_id == "rec-42"
         assert args.records_dir == "/tmp/records"
-        assert args.input_files == "a.fq,b.fq"
-        assert args.output_files == "out/contigs.fa"
         assert command == ["megahit", "-1", "a.fq"]
 
     def test_no_separator_exits(self):
@@ -73,35 +66,10 @@ class TestParseArgs:
         assert args.session is None
         assert args.record_id is None
         assert args.records_dir is None
-        assert args.input_files is None
-        assert args.output_files is None
 
 
 # ---------------------------------------------------------------------------
 # File list parsing
-# ---------------------------------------------------------------------------
-
-
-class TestParseFileList:
-
-    def test_none(self):
-        assert _parse_file_list(None) == []
-
-    def test_empty_string(self):
-        assert _parse_file_list("") == []
-
-    def test_single(self):
-        assert _parse_file_list("reads.fq.gz") == ["reads.fq.gz"]
-
-    def test_multiple(self):
-        assert _parse_file_list("a.fq, b.fq,c.fq") == ["a.fq", "b.fq", "c.fq"]
-
-    def test_trailing_comma(self):
-        assert _parse_file_list("a.fq,") == ["a.fq"]
-
-
-# ---------------------------------------------------------------------------
-# Records directory resolution
 # ---------------------------------------------------------------------------
 
 
@@ -678,10 +646,6 @@ class TestFileHashes:
                 "copy",
                 "--records-dir",
                 str(tmp_path / "records"),
-                "--input-files",
-                "in.txt",
-                "--output-files",
-                "out.txt",
                 "--",
                 "cp",
                 "in.txt",
@@ -696,18 +660,14 @@ class TestFileHashes:
         }
 
     def test_a_missing_output_has_no_hash(self, tmp_path, monkeypatch):
+        """A spec role naming a file the run never wrote leaves no hash."""
         monkeypatch.chdir(tmp_path)
-        main(
-            [
-                "--code",
-                "t",
-                "--records-dir",
-                str(tmp_path / "records"),
-                "--output-files",
-                "never.txt",
-                "--",
-                "true",
-            ]
+        run_and_record(
+            "t",
+            ["true"],
+            tmp_path / "records",
+            output_files=["never.txt"],
+            log_trace=None,
         )
         record = json.loads(next((tmp_path / "records").glob("*.json")).read_text())
         assert record["execution"]["file_hashes"] == {}
@@ -782,23 +742,49 @@ class TestRolesAndArgumentsPerSide:
     def test_role_inputs_keep_and_outputs_come_from_the_scan(
         self, tmp_path, monkeypatch
     ):
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / "in.fq").write_text("x\n")
+        """The spec names the input; the output side, which the roles leave
+        empty, is filled from the arguments."""
+        from dsagt.registry import CodeRegistry
+
+        project = tmp_path / "proj"
+        (project / "trace_archive").mkdir(parents=True)
+        CodeRegistry(runtime_dir=project).save_tool(
+            {
+                "name": "t",
+                "description": "d",
+                "executable": "cp",
+                "parameters": {
+                    "src": {
+                        "type": "string",
+                        "description": "in",
+                        "cli": "positional",
+                        "role": "input",
+                    },
+                    "dest": {
+                        "type": "string",
+                        "description": "out",
+                        "cli": "positional",
+                    },
+                },
+            }
+        )
+        (project / "in.fq").write_text("x\n")
+        monkeypatch.chdir(project)
         main(
             [
                 "--code",
                 "t",
                 "--records-dir",
-                str(tmp_path / "records"),
-                "--input-files",
-                "in.fq",
+                str(project / "trace_archive"),
                 "--",
                 "cp",
                 "in.fq",
                 "out.fq",
             ]
         )
-        record = json.loads(next((tmp_path / "records").glob("*.json")).read_text())
+        record = json.loads(
+            next((project / "trace_archive").glob("*.json")).read_text()
+        )
         assert record["execution"]["input_files"] == ["in.fq"]
         assert record["execution"]["output_files"] == ["out.fq"]
 

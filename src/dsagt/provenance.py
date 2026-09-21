@@ -183,13 +183,6 @@ def file_roles_from_command(
     return inputs, outputs
 
 
-def _parse_file_list(raw: str | None) -> list[str]:
-    """Split a comma-separated file list, stripping whitespace."""
-    if not raw:
-        return []
-    return [f.strip() for f in raw.split(",") if f.strip()]
-
-
 def sha256_of(path: str) -> str | None:
     """The SHA-256 of a regular file, or ``None`` for a path that is not one.
 
