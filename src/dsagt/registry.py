@@ -1,34 +1,33 @@
 """
-Code and Skill Registries.
+The project's skills directory, and the two ways dsagt reads it.
 
-Two parallel registries for agent capabilities:
+A project keeps everything the agent can use in one place,
+``<project>/skills/``, with a directory per entry.  Each holds a ``SKILL.md``
+whose YAML frontmatter gives its name and description, plus any scripts and
+reference documents.  Some entries are instructions the agent reads and
+follows.  Others also name an ``executable`` in that frontmatter, a command
+line the agent can run; those are what dsagt calls codes.  ``CodeRegistry``
+reads the entries that name one, ``SkillRegistry`` reads them all, and each
+writes what it reads.
 
-**Codes** (CLI executables): skill-standard directories
-(`<project>/skills/<name>/SKILL.md`) whose frontmatter carries the machine
-fields (name, description, executable, parameters, dependencies, tags) on
-top of the skill-required name/description; a code is a skill whose
-frontmatter declares an executable, and codes and skills share one
-directory.  Agent-written scripts are stored beside their spec in
-`<project>/skills/<name>/scripts/`, so each registered code is a
-self-contained, portable directory.  The skill-standard envelope means
-codes mirror into the agent's native skills dir unchanged (see
-``AgentSetup.setup_skills``); native discovery puts the exact runnable
-command in context at invocation time, alongside MCP discovery via
-``search_registry``.
-When registered, executables are wrapped with dsagt-run + uv run --with.
-The wrapper is part of the stored shell command: agents run their own bash
-tools, outside any MCP-mediated execution, so provenance is captured at
-the shell boundary.  The remaining failure mode is an agent reconstructing
-the command from memory and dropping the wrapper, which is why specs render
-the exact runnable command and agent instructions say to copy it verbatim.
+Both kinds share the directory because that is how the agent finds them
+without asking.  Claude Code, Codex and the rest each discover skills from a
+directory of their own, and ``AgentSetup.setup_skills`` links this one there,
+so a code's command is in the agent's context at invocation, without a
+search.
 
-**Skills** (agent instructions): directories containing a SKILL.md with
-YAML frontmatter (name, description, tags) and optional reference docs.
-Stored in `<project>/skills/`. The agent reads SKILL.md and follows the
-workflow instructions.
+The ``executable`` is stored as the whole command line rather than the
+program alone::
 
-Both registries support optional KB indexing for semantic search via
-`search_registry` (codes) and `search_skills` (skills) MCP tools.
+    dsagt-run --code <name> -- [uv run --with <deps> --] <command>
+
+Execution belongs to the agent's own shell, outside anything dsagt mediates,
+so the wrapper that writes the execution record is part of the stored string.
+``save_tool`` writes that string, and every tool that returns a code returns
+it verbatim.
+
+    CodeRegistry  ◇── knowledge.KnowledgeBase   (the `codes` collection)
+    SkillRegistry ◇── knowledge.KnowledgeBase   (a catalog collection)
 """
 
 from __future__ import annotations
@@ -337,14 +336,14 @@ def render_arguments(parameters: dict, values: dict) -> list[str]:
 
 
 class CodeRegistry:
-    """
-    Manages CLI code spec files and optional KB indexing.
+    """The entries whose frontmatter names an ``executable``.
 
-    One layer: every code, a base skill's or the agent's, is a
-    skill-standard directory in ``<project>/skills/<name>/``, self-contained
-    (spec + scripts), in one format, beside the instruction skills; what
-    makes it a code is the ``executable`` in its frontmatter.  KB-side search
-    via ``search_registry``.
+    A code's directory holds its spec and its scripts, so it is portable on
+    its own.  ``save_tool`` is the one writer, called for a base skill's
+    script, a catalog skill's, an agent-authored one, and a single script
+    saved through ``save_code_spec``, so all four arrive in the same shape.
+    Indexes into the project's ``codes`` collection when a knowledge base is
+    given, which is what ``search_registry`` reads.
     """
 
     def __init__(
@@ -422,13 +421,15 @@ class CodeRegistry:
         return None
 
     def save_tool(self, spec: dict) -> str:
-        """Write or update a code's SKILL.md. Returns 'added' or 'updated'.
+        """Write or update a code's SKILL.md; returns 'added' or 'updated'.
 
-        Automatically wraps the executable:
-        - With `uv run --with <deps>` if Python dependencies are specified
-        - With `dsagt-run --code <name>` for provenance capture
-
-        If a KnowledgeBase is available, indexes the code for semantic search.
+        The spec's ``executable`` is stored as the whole command line the
+        agent runs: ``uv run --with <deps> --`` when the spec declares
+        dependencies, under ``dsagt-run --code <name> --``.  An existing
+        frontmatter is kept underneath the spec's keys and a hand-edited body
+        survives, because a skill whose CLI is a code of its own name (aidrin)
+        would otherwise lose its upstream text to the spec.  Indexes the code
+        when a knowledge base is given.
         """
         # Codes share the skill-standard envelope so they mirror into agent
         # native skills dirs, whose loaders require lowercase-hyphen names.
@@ -500,15 +501,13 @@ class CodeRegistry:
 
 
 class SkillRegistry:
-    """
-    Manages the instruction skills installed in ``<project>/skills/``.
+    """Every entry in the directory, whether or not it names an executable.
 
-    One layer: every skill a project has (the base skills ``dsagt init``
-    installs from their upstream repositories, catalog skills added with
-    ``install_skill``, and skills the agent authors with ``save_skill``)
-    is a skill-standard directory ``<project>/skills/<name>/``.  The
-    package holds no skills of its own.  Installed skills reach the agent
-    through the native mirror ``AgentSetup.setup_skills`` writes.
+    A skill arrives three ways, and each ends here: the base skills ``dsagt
+    init`` installs from their upstream repositories, a catalog skill through
+    ``install_skill``, and the agent's own through ``save_skill``.  The
+    package holds no skills of its own.  ``skill_dirs`` is what the native
+    mirror (``AgentSetup.setup_skills``) copies, so it lists codes too.
     """
 
     def __init__(
