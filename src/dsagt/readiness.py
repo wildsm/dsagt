@@ -24,23 +24,22 @@ from __future__ import annotations
 INSTRUCTIONS_PARAGRAPH = """\
 #### AI-readiness check
 
-For a stage whose input or output is a table, the check is the `aidrin`
-skill's quality baseline: run it on the file before and after the operation,
-through the registered `aidrin` code's `executable` (never bare `aidrin`).
-A table is a CSV, Parquet, Excel, or JSON-records file; an HDF5 or NumPy file
-counts only once `aidrin summarize` shows it as one table, since AIDRIN reads
-any HDF5 it can flatten and scores a simulation field as columns. Before a
-check, call the `readiness_reports` tool on the file: a report from a run
-after which the file is unchanged is current, and the post report of one
-stage is the pre report of the next, so an unchanged file is not checked
-twice. Run the baseline directly; do not ask the user about intent or confirm
-a plan for these checks (the skill's full workflow is for assessments the user
-asks for). The run's execution record holds the report: `dsagt-run --code
-aidrin -- aidrin data-quality <file> --detail` before the operation and after
-it, then report the per-metric change to the user before proposing the next
-step. Do not write a custom check for a
-metric AIDRIN provides. A stage with a table as input or output gets this
-check; every other stage keeps the check rule above."""
+For a stage whose input or output is a tabular file (CSV, TSV, Excel, JSON,
+HDF5, Parquet, npz), the check is the `aidrin` skill's quality baseline: run
+it on the file before and after the operation, through the registered
+`aidrin` code's `executable` (never bare `aidrin`). Run the baseline
+directly; do not ask the user about intent or confirm a plan for these checks
+(the skill's full workflow is for assessments the user asks for). A JSON,
+HDF5, or NumPy file may hold nested or multi-dataset structure that the
+baseline reads as one flat table; say so beside the numbers when you report
+them. The run's execution record holds the report, and `readiness_reports`
+returns the one on record for a file; `dsagt-run` refuses a check that
+repeats one already on record for the file's current content. Report the
+per-metric change to the user before proposing the next step, comparing a
+table with its own earlier report or with the report of the table it was made
+from. Do not write a custom check for a metric AIDRIN provides. A stage with
+a tabular input or output gets this check; every other stage keeps the check
+rule above."""
 
 
 #: What ``readiness_reports`` says for a file with no current report.
@@ -48,6 +47,39 @@ NO_REPORT = (
     "no readiness report for {path} at its current content. Check it with the "
     "aidrin skill (at least its data-quality summary)."
 )
+
+
+#: The code whose runs are the AI-readiness check.
+CHECK_CODE = "aidrin"
+
+
+def repeated_check(command: list[str], project_dir) -> dict | None:
+    """The record of an identical check already made on the same content, or ``None``.
+
+    A check is identical when the command matches and every file it names
+    hashes to what that run recorded, so re-running it would produce the
+    report already on record.  Codex ran four such repeats in one cryo-EM
+    walkthrough.  A command naming no file that exists is never a repeat.
+    """
+    from pathlib import Path as _Path
+
+    from dsagt.provenance import load_pipeline_records, sha256_of
+
+    project_dir = _Path(project_dir)
+    named = [a for a in command[1:] if (project_dir / a).is_file()]
+    if not named:
+        return None
+    current = {a: sha256_of(str(project_dir / a)) for a in named}
+    for record in load_pipeline_records(project_dir / "trace_archive"):
+        execution = record["execution"]
+        if record.get("code_name") != CHECK_CODE or execution.get("return_code") != 0:
+            continue
+        if execution.get("exact_command") != command:
+            continue
+        recorded = execution.get("file_hashes", {})
+        if all(recorded.get(a) == digest for a, digest in current.items()):
+            return record
+    return None
 
 
 def aidrin_release_tag(version: str) -> str:

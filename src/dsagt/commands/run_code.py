@@ -76,6 +76,21 @@ def _parse_args(argv: list[str] | None = None) -> tuple[argparse.Namespace, list
     return parsed, command_args
 
 
+def _repeated_check(command: list[str], project_dir: Path):
+    """The record of an identical readiness check on unchanged files, when the
+    project keeps the check on; ``None`` otherwise."""
+    import yaml
+
+    from dsagt.readiness import auto_assess_enabled, repeated_check
+
+    config = project_dir / ".dsagt" / "config.yaml"
+    if not config.exists():
+        return None
+    if not auto_assess_enabled(yaml.safe_load(config.read_text()) or {}):
+        return None
+    return repeated_check(command, project_dir)
+
+
 def log_trace(record_path: str, session_id: str | None) -> None:
     """Log the ``code.execute`` trace of the record at *record_path*.
 
@@ -174,6 +189,19 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as err:
         print(f"dsagt-run: {err}", file=sys.stderr)
         return 1
+
+    from dsagt.readiness import CHECK_CODE
+
+    if args.code == CHECK_CODE:
+        repeat = _repeated_check(command, records_dir.parent)
+        if repeat is not None:
+            print(
+                f"dsagt-run: this check is already on record ({repeat['record_id']}) "
+                "and the files it read are unchanged, so it would produce the same "
+                "report. Read it with the readiness_reports tool.",
+                file=sys.stderr,
+            )
+            return 2
 
     input_files = _parse_file_list(args.input_files)
     output_files = _parse_file_list(args.output_files)

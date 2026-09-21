@@ -49,9 +49,9 @@ class TestInstructionsParagraph:
         next_rule = text.index("### 5. File Organization")
         assert check_rule < paragraph < next_rule
         assert "quality baseline" in text
-        assert "aidrin data-quality <file> --detail" in text
+        assert "tabular file (CSV, TSV, Excel, JSON,\nHDF5, Parquet, npz)" in text
         # Through the registered code, never the bare binary.
-        assert "registered `aidrin`" in text
+        assert "registered\n`aidrin` code's `executable`" in text
         assert "<!--" not in text
 
     def test_paragraph_absent_when_off(self):
@@ -77,3 +77,56 @@ def test_docs_page_quotes_the_paragraph_verbatim():
         for line in text[start:end].rstrip("\n").split("\n")
     )
     assert quoted == INSTRUCTIONS_PARAGRAPH.rstrip("\n")
+
+
+class TestRepeatedCheck:
+    """dsagt-run refuses a check that would produce the report already on record."""
+
+    def _project(self, tmp_path, command, digest_source=b"a\n1\n"):
+        import hashlib
+        import json
+
+        (tmp_path / "trace_archive").mkdir(exist_ok=True)
+        record = {
+            "record_id": "r1",
+            "code_name": "aidrin",
+            "execution": {
+                "exact_command": command,
+                "return_code": 0,
+                "timestamp_start": "2026-01-01T00:00:00Z",
+                "input_files": ["data/t.csv"],
+                "output_files": [],
+                "file_hashes": {
+                    "data/t.csv": hashlib.sha256(digest_source).hexdigest()
+                },
+            },
+        }
+        (tmp_path / "trace_archive" / "aidrin_r1.json").write_text(json.dumps(record))
+
+    def test_the_same_check_on_unchanged_content_is_a_repeat(self, tmp_path):
+        from dsagt.readiness import repeated_check
+
+        (tmp_path / "data").mkdir()
+        (tmp_path / "data" / "t.csv").write_text("a\n1\n")
+        command = ["aidrin", "data-quality", "data/t.csv", "--detail"]
+        self._project(tmp_path, command)
+        assert repeated_check(command, tmp_path)["record_id"] == "r1"
+
+    def test_a_changed_file_or_another_command_is_not(self, tmp_path):
+        from dsagt.readiness import repeated_check
+
+        (tmp_path / "data").mkdir()
+        (tmp_path / "data" / "t.csv").write_text("a\n1\n")
+        command = ["aidrin", "data-quality", "data/t.csv", "--detail"]
+        self._project(tmp_path, command)
+        # Another metric on the same table is its own check.
+        assert repeated_check(["aidrin", "privacy", "data/t.csv"], tmp_path) is None
+        (tmp_path / "data" / "t.csv").write_text("a\n2\n")
+        assert repeated_check(command, tmp_path) is None
+
+    def test_a_command_naming_no_file_is_never_a_repeat(self, tmp_path):
+        from dsagt.readiness import repeated_check
+
+        command = ["aidrin", "list", "--capabilities"]
+        self._project(tmp_path, command)
+        assert repeated_check(command, tmp_path) is None

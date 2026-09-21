@@ -14,13 +14,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of each input before the run and each output after it. When a spec has no
   parameter roles, an argument that is an existing
   file is an input and one that exists only after the run is an output.
-- **`readiness_reports` tool.** The AIDRIN report on record for a data file:
-  the report made while the file had its present content, with the report's
-  text taken from that run's record, or how to make one when there is none,
-  and the reports from before the file changed. The readiness paragraph says
-  to call it before a check, so an unchanged file is checked once, and
-  defines a table (CSV, Parquet, Excel, JSON records; HDF5 or NumPy only once
-  `aidrin summarize` shows one table).
+- **`readiness_reports` tool and a refusal on a repeated check.** The tool
+  returns the AIDRIN report on record for a data file: the report made while
+  the file had its present content, with the text taken from that run's
+  record, or how to make one when there is none, and the reports from before
+  the file changed. `dsagt-run` refuses an `aidrin` run whose command and
+  input content match a check already on record, so an unchanged file is
+  checked once; codex made four such repeats in one walkthrough.
 - **`reconstruct_pipeline(output=...)`** saves the script under the project;
   the bash script creates the recorded output directories first and removes
   a repeated output before the step that rewrites it.
