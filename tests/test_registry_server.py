@@ -263,7 +263,7 @@ class TestSaveToolSpecDependencies:
 def _make_server_with_kb(tmp_path, tools=None):
     """Create (server, registry, kb) with a real local-embedding KnowledgeBase.
 
-    Pre-populated tools are written to ``<runtime>/tools/`` so they
+    Pre-populated codes are written to ``<runtime>/skills/`` so they
     exercise the agent-saved code path.
     """
     from dsagt.knowledge import KnowledgeBase

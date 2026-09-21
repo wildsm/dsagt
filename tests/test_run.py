@@ -234,7 +234,7 @@ class TestRunAndRecord:
         assert data["session_id"] == "t-1"
 
     def test_explicit_session_overrides_state(self, tmp_path, monkeypatch):
-        """Explicit --session takes precedence over the state-file tag."""
+        """An explicit session_id takes precedence over the state-file tag."""
         from dsagt.session import append_session, write_config_file, build_config
 
         write_config_file(tmp_path, build_config("t", "claude"))
@@ -428,7 +428,7 @@ class TestMain:
         assert run_code._log_trace_detached(tmp_path / "elsewhere") is None
 
     def test_record_files_come_from_the_spec_roles(self, tmp_path, monkeypatch):
-        """Without --input-files/--output-files, dsagt-run reads the spec of
+        """With no declared file parameters, dsagt-run reads the spec of
         --code from the project and records the files its role parameters
         name, so the dependency graph has edges without the agent passing
         the flags."""
@@ -912,7 +912,7 @@ def test_a_moved_input_is_not_an_output(tmp_path, monkeypatch):
 def test_a_run_without_a_code_name_is_refused(tmp_path, capsys):
     """--code is what names the record; argparse requires it."""
     with pytest.raises(SystemExit):
-        main(["--records-dir", str(tmp_path), "--", "true"])
+        main(["--", "true"])
     assert "--code" in capsys.readouterr().err
     assert list(tmp_path.glob("*.json")) == []
 
