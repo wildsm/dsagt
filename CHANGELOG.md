@@ -134,6 +134,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   which is not the environment the agent's shell runs a command in. A code's
   declared dependencies reach its run through the `uv run --with` prefix in
   its stored `executable`. The server has 17 tools.
+- **The embedding backend's fallback credential names.** `APIEmbedder` read
+  `LLM_API_KEY` and `OPENAI_API_KEY` after `EMBEDDING_API_KEY`, and
+  `OPENAI_BASE_URL` after `EMBEDDING_BASE_URL`; the server also read
+  `embedding.api_key` from the project config. The key comes from
+  `EMBEDDING_API_KEY` and the URL from `EMBEDDING_BASE_URL`, in the shell or
+  `~/.config/dsagt/env`. A setup that exported an `OPENAI_`- or `LLM_`-named
+  key for the embedder exports `EMBEDDING_API_KEY` instead.
+- **`tests/manual_walkthroughs/`.** The two hand-tests described roo, a
+  `dsagt mlflow` command, and per-agent OTel, none of which the tree has;
+  `dsagt smoke-test` covers the same ground.
 
 ### Fixed
 
