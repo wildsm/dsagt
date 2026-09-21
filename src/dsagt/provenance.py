@@ -1,18 +1,41 @@
 """
-Provenance for code executions.
+Provenance for code executions: the record, its index, and the script it replays.
 
-**Execution capture** (dsagt-run wrapper):
-    Wraps a shell command, captures exact execution data (command, exit
-    code, stdout/stderr, input/output files), and writes a JSON record
-    to ``trace_archive/<code>_<ts>_<id>.json``.
+``dsagt-run`` wraps a registered code's command, and what it leaves behind is
+one JSON record per run in ``trace_archive/``: the command as argv, the exit
+code, what it printed, and the files it read and wrote with a SHA-256 of each.
+The record is the provenance; everything else in this module reads it.  The
+MCP server's periodic pass embeds records into the ``code_use`` collection so
+past runs are searchable, and ``reconstruct_pipeline`` turns a session's
+records into a script that repeats the work on a fresh copy.
 
-**Record indexing** (ChromaDB):
-    Indexes execution records into a ``code_use`` collection for
-    semantic search and metadata filtering.
+Which files a run touched is derived, not declared: the code's spec names its
+input and output parameters, and each side the spec leaves empty is filled by
+scanning the arguments.  That is why a command's files can be known without
+the agent listing them, and why the scan has a section of its own below.
 
-**Pipeline reconstruction**:
-    Reads execution records, builds a dependency graph from input/output
-    file overlap, and renders as a bash script or Snakemake workflow.
+Nothing here imports a heavy dependency at module scope.  ``dsagt-run`` pays
+this module's import on every recorded command, so ``KnowledgeBase`` is an
+annotation under ``TYPE_CHECKING`` and MLflow is imported inside the two
+functions that log a trace.
+
+Sections (top to bottom)
+------------------------
+  which files      file_roles_from_command  (the spec's roles)
+                   files_from_arguments · new_files_from_arguments  (the scan)
+                   sha256_of  (what says a file changed since a run)
+  running          _run_streaming  (echo as it arrives, keep it all, forward
+                   a signal to the child so a killed run still has a record)
+  the record       run_and_record ─┬─ _outputs_after_the_run
+                                   ├─ _write_record
+                                   └─ log_execution_trace_if_tracing
+  the index        index_trace_archive · CodeUseIndexer  (the periodic pass)
+                   render_execution_text · execution_metadata  (what a
+                   record looks like to the embedder and to a filter)
+  the script       reconstruct_pipeline ─┬─ load_pipeline_records
+                                         ├─ build_dependency_graph
+                                         └─ render_bash · render_snakemake
+                   readiness_reports  (the aidrin records for one file)
 """
 
 from __future__ import annotations
@@ -44,65 +67,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 #: Project-local collection of indexed code-execution records.
+
+
 CODE_USE_COLLECTION = "code_use"
 
 
-# ---------------------------------------------------------------------------
-# Execution capture (dsagt-run)
-# ---------------------------------------------------------------------------
-
-
-def _resolve_records_dir() -> Path:
-    """The project's ``trace_archive/``.
-
-    ``$DSAGT_PROJECT_DIR`` (exported by ``dsagt start`` and the MCP env
-    block) names the project, and the working directory is it otherwise.  The
-    directory must hold ``.dsagt/config.yaml``, the project config ``dsagt
-    init`` writes.  The project is a fixed place, the agent's working
-    directory, so the directory is checked as given: a ``cd`` into a
-    subdirectory before the command is the error, and the message names it.
-    """
-    env_dir = os.environ.get("DSAGT_PROJECT_DIR")
-    if env_dir:
-        project, source = Path(env_dir).resolve(), "DSAGT_PROJECT_DIR"
-    else:
-        project, source = Path.cwd().resolve(), "the working directory"
-    if not (project / ".dsagt" / "config.yaml").exists():
-        raise ValueError(
-            f"{source} ({project}) is not a dsagt project: no .dsagt/config.yaml. "
-            "Run dsagt-run from the project directory."
-        )
-    return project / "trace_archive"
-
-
-def _current_session_tag_from_cwd() -> str | None:
-    """Read the current session tag from ``<cwd>/.dsagt/state.yaml``.
-
-    ``dsagt-run`` runs with cwd == project dir; the MCP server (also a child
-    of the agent) minted the session into ``state.yaml`` at startup.  Lazy
-    import of ``session`` avoids a circular import (``session`` imports this
-    module for ``index_trace_archive``).
-    """
-    from dsagt import session
-
-    cwd = Path.cwd().resolve()
-    cfg = session.read_config_file(cwd)
-    project = cfg.get("project")
-    if not project:
-        return None
-    return session.current_session_tag(cwd, project)
-
-
-def _without_uv_wrapper(tokens: list[str]) -> list[str]:
-    """*tokens* with a leading ``uv run ... --`` removed.
-
-    A spec with dependencies stores ``uv run --with <deps> -- <command>``;
-    an agent that runs the command without the wrapper still ran this
-    code, and the roles apply to the arguments either way.
-    """
-    if tokens[:2] == ["uv", "run"] and "--" in tokens:
-        return tokens[tokens.index("--") + 1 :]
-    return tokens
+# -------------------------------------------------------------------------
+# Which files a command read and wrote
+# -------------------------------------------------------------------------
 
 
 def file_roles_from_command(
@@ -181,33 +153,16 @@ def file_roles_from_command(
     return inputs, outputs
 
 
-def sha256_of(path: str) -> str | None:
-    """The SHA-256 of a regular file, or ``None`` for a path that is not one.
+def _without_uv_wrapper(tokens: list[str]) -> list[str]:
+    """*tokens* with a leading ``uv run ... --`` removed.
 
-    Streamed in 1 MiB chunks; the record identifies each input and output by
-    content so a later pass can tell whether a file changed since the run,
-    which a timestamp cannot (a copy has a new mtime, a move keeps an old one).
+    A spec with dependencies stores ``uv run --with <deps> -- <command>``;
+    an agent that runs the command without the wrapper still ran this
+    code, and the roles apply to the arguments either way.
     """
-    file = Path(path)
-    if not _is_file(path):
-        return None
-    digest = hashlib.sha256()
-    with open(file, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _is_file(arg: str) -> bool:
-    """Whether *arg* names a regular file; an argument the OS cannot stat (a
-    script passed inline, longer than a path may be) is not one."""
-    try:
-        return Path(arg).is_file()
-    except OSError:
-        return False
-
-
-_INTERPRETERS = ("python", "python3", "bash", "sh", "zsh", "Rscript", "perl", "node")
+    if tokens[:2] == ["uv", "run"] and "--" in tokens:
+        return tokens[tokens.index("--") + 1 :]
+    return tokens
 
 
 def files_from_arguments(command: list[str]) -> list[str]:
@@ -232,11 +187,7 @@ def files_from_arguments(command: list[str]) -> list[str]:
     return [arg for arg in args if _is_file(arg) or _is_dir(arg)]
 
 
-def _is_dir(arg: str) -> bool:
-    try:
-        return Path(arg).is_dir()
-    except OSError:
-        return False
+_INTERPRETERS = ("python", "python3", "bash", "sh", "zsh", "Rscript", "perl", "node")
 
 
 def new_files_from_arguments(command: list[str], before: list[str]) -> list[str]:
@@ -251,29 +202,42 @@ def new_files_from_arguments(command: list[str], before: list[str]) -> list[str]
     ]
 
 
-def _child_env() -> dict[str, str]:
-    """Environment for the code's process: the caller's, with the directory
-    of dsagt's own interpreter appended to PATH.
+def _is_file(arg: str) -> bool:
+    """Whether *arg* names a regular file; an argument the OS cannot stat (a
+    script passed inline, longer than a path may be) is not one."""
+    try:
+        return Path(arg).is_file()
+    except OSError:
+        return False
 
-    A tool installer (pipx, ``uv tool install``) links only dsagt's commands
-    onto PATH; a CLI that is a dsagt dependency, such as ``aidrin``, is in
-    that private environment's bin directory.  Appended, not prepended, so
-    every command already on PATH resolves as it did before.
+
+def _is_dir(arg: str) -> bool:
+    try:
+        return Path(arg).is_dir()
+    except OSError:
+        return False
+
+
+def sha256_of(path: str) -> str | None:
+    """The SHA-256 of a regular file, or ``None`` for a path that is not one.
+
+    Streamed in 1 MiB chunks; the record identifies each input and output by
+    content so a later pass can tell whether a file changed since the run,
+    which a timestamp cannot (a copy has a new mtime, a move keeps an old one).
     """
-    env = dict(os.environ)
-    bin_dir = str(Path(sys.executable).parent)
-    path = env.get("PATH", "")
-    if bin_dir not in path.split(os.pathsep):
-        env["PATH"] = f"{path}{os.pathsep}{bin_dir}" if path else bin_dir
-    return env
+    file = Path(path)
+    if not _is_file(path):
+        return None
+    digest = hashlib.sha256()
+    with open(file, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-def _pump(source, sink, lines: list[str]) -> None:
-    """Copy *source* to *sink* line by line, keeping every line in *lines*."""
-    for line in iter(source.readline, ""):
-        lines.append(line)
-        sink.write(line)
-        sink.flush()
+# -------------------------------------------------------------------------
+# Running the command
+# -------------------------------------------------------------------------
 
 
 _FORWARDED_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
@@ -332,6 +296,36 @@ def _run_streaming(
         name = signal.Signals(forwarded[0]).name
         err_lines.append(f"dsagt-run: terminated by {name}\n")
     return return_code, "".join(out_lines), "".join(err_lines)
+
+
+def _child_env() -> dict[str, str]:
+    """Environment for the code's process: the caller's, with the directory
+    of dsagt's own interpreter appended to PATH.
+
+    A tool installer (pipx, ``uv tool install``) links only dsagt's commands
+    onto PATH; a CLI that is a dsagt dependency, such as ``aidrin``, is in
+    that private environment's bin directory.  Appended, not prepended, so
+    every command already on PATH resolves as it did before.
+    """
+    env = dict(os.environ)
+    bin_dir = str(Path(sys.executable).parent)
+    path = env.get("PATH", "")
+    if bin_dir not in path.split(os.pathsep):
+        env["PATH"] = f"{path}{os.pathsep}{bin_dir}" if path else bin_dir
+    return env
+
+
+def _pump(source, sink, lines: list[str]) -> None:
+    """Copy *source* to *sink* line by line, keeping every line in *lines*."""
+    for line in iter(source.readline, ""):
+        lines.append(line)
+        sink.write(line)
+        sink.flush()
+
+
+# -------------------------------------------------------------------------
+# Writing the record
+# -------------------------------------------------------------------------
 
 
 def log_execution_trace_if_tracing(record_path: Path) -> None:
@@ -400,26 +394,15 @@ def run_and_record(
 
     duration_ms = round((time.perf_counter() - start_perf) * 1000, 3)
     timestamp_end = datetime.now(timezone.utc).isoformat()
-    if derive_outputs:
-        # With no roles, an argument that did not exist before the run is an
-        # output, and so is one the run changed: a converter that replaces
-        # its output file names it on every run, not only the first.
-        rewritten = [
-            f
-            for f in input_files
-            if derive_inputs
-            and sha256_of(f) is not None  # still there: a moved file is not written
-            and file_hashes.get(f) not in (None, sha256_of(f))
-        ]
-        output_files = [
-            f
-            for f in new_files_from_arguments(command, input_files) + rewritten
-            if f not in output_files
-        ] + output_files
-    if return_code != 0:
-        # A declared output a failed run never wrote is left out, so the
-        # record names no producer for a file that does not exist.
-        output_files = [f for f in output_files if _is_file(f) or _is_dir(f)]
+    output_files = _outputs_after_the_run(
+        command,
+        input_files,
+        output_files,
+        file_hashes,
+        derive=derive_outputs,
+        derived_inputs=derive_inputs,
+        return_code=return_code,
+    )
     for f in output_files:
         file_hashes[f] = sha256_of(f)
     file_hashes = {f: h for f, h in file_hashes.items() if h is not None}
@@ -452,6 +435,85 @@ def run_and_record(
     return return_code
 
 
+def _outputs_after_the_run(
+    command: list[str],
+    input_files: list[str],
+    output_files: list[str],
+    hashes_before: dict[str, str | None],
+    *,
+    derive: bool,
+    derived_inputs: bool,
+    return_code: int,
+) -> list[str]:
+    """The run's output files, once the command has exited.
+
+    With no roles on the output side, an argument that did not exist before
+    the run is an output, and so is one the run changed: a converter that
+    replaces its output file names it on every run, not only the first, and
+    *hashes_before* is what tells the two apart.  A file the command moved
+    away is gone, so it is not an output.  A failed run keeps only the
+    outputs that exist, so the record names no producer for a file that is
+    not there.
+    """
+    if derive:
+        rewritten = [
+            f
+            for f in input_files
+            if derived_inputs
+            and sha256_of(f) is not None
+            and hashes_before.get(f) not in (None, sha256_of(f))
+        ]
+        output_files = [
+            f
+            for f in new_files_from_arguments(command, input_files) + rewritten
+            if f not in output_files
+        ] + output_files
+    if return_code != 0:
+        return [f for f in output_files if _is_file(f) or _is_dir(f)]
+    return output_files
+
+
+def _resolve_records_dir() -> Path:
+    """The project's ``trace_archive/``.
+
+    ``$DSAGT_PROJECT_DIR`` (exported by ``dsagt start`` and the MCP env
+    block) names the project, and the working directory is it otherwise.  The
+    directory must hold ``.dsagt/config.yaml``, the project config ``dsagt
+    init`` writes.  The project is a fixed place, the agent's working
+    directory, so the directory is checked as given: a ``cd`` into a
+    subdirectory before the command is the error, and the message names it.
+    """
+    env_dir = os.environ.get("DSAGT_PROJECT_DIR")
+    if env_dir:
+        project, source = Path(env_dir).resolve(), "DSAGT_PROJECT_DIR"
+    else:
+        project, source = Path.cwd().resolve(), "the working directory"
+    if not (project / ".dsagt" / "config.yaml").exists():
+        raise ValueError(
+            f"{source} ({project}) is not a dsagt project: no .dsagt/config.yaml. "
+            "Run dsagt-run from the project directory."
+        )
+    return project / "trace_archive"
+
+
+def _current_session_tag_from_cwd() -> str | None:
+    """Read the current session tag from ``<cwd>/.dsagt/state.yaml``.
+
+    ``dsagt-run`` runs with cwd == project dir; the MCP server (also a child
+    of the agent) minted the session into ``state.yaml`` at startup.  Lazy
+    import of ``session`` avoids a circular import (``session`` imports this
+    module for ``index_trace_archive``).
+    """
+    from dsagt import session
+
+    cwd = Path.cwd().resolve()
+    cfg = session.read_config_file(cwd)
+    project = cfg.get("project")
+    if not project:
+        return None
+    return session.current_session_tag(cwd, project)
+
+
 def _write_record(record: dict, records_dir: Path) -> Path:
     """Write a JSON execution record. Returns the file path."""
     records_dir.mkdir(parents=True, exist_ok=True)
@@ -464,72 +526,9 @@ def _write_record(record: dict, records_dir: Path) -> Path:
     return path
 
 
-# ---------------------------------------------------------------------------
-# Record indexing (ChromaDB)
-# ---------------------------------------------------------------------------
-
-
-def render_execution_text(record: dict) -> str:
-    """Convert a code execution record into embeddable natural-language text."""
-    code_name = record.get("code_name", "unknown")
-    execution = record.get("execution")
-
-    parts = [f"Code: {code_name}"]
-
-    if execution and execution.get("exact_command"):
-        cmd = execution["exact_command"]
-        if isinstance(cmd, list):
-            cmd = " ".join(cmd)
-        parts.append(f"Command: {cmd}")
-
-    if execution and execution.get("return_code") is not None:
-        rc = execution["return_code"]
-        status = "succeeded" if rc == 0 else f"failed (exit code {rc})"
-        parts.append(f"Outcome: {status}")
-
-    if execution:
-        start = execution.get("timestamp_start", "")
-        end = execution.get("timestamp_end", "")
-        if start and end:
-            parts.append(f"Duration: {start} to {end}")
-
-    if execution and execution.get("input_files"):
-        parts.append(f"Input files: {', '.join(execution['input_files'])}")
-    if execution and execution.get("output_files"):
-        parts.append(f"Output files: {', '.join(execution['output_files'])}")
-
-    if execution and execution.get("stderr"):
-        stderr = execution["stderr"].strip()
-        if stderr:
-            if len(stderr) > 300:
-                stderr = stderr[:300] + "..."
-            parts.append(f"Stderr: {stderr}")
-
-    return "\n".join(parts)
-
-
-def execution_metadata(record: dict) -> dict:
-    """Extract ChromaDB-filterable metadata from a code execution record."""
-    execution = record.get("execution")
-
-    meta: dict = {}
-    meta["code_name"] = record.get("code_name") or "unknown"
-    # A code run outside a minted session stores session_id: null, and ChromaDB
-    # rejects a null metadata value, which would fail the whole batch add and
-    # re-fail every pass.  Coerce null to "unknown".
-    meta["session_id"] = record.get("session_id") or "unknown"
-
-    if execution and execution.get("return_code") is not None:
-        meta["return_code"] = execution["return_code"]
-
-    if execution and execution.get("timestamp_start"):
-        meta["timestamp"] = execution["timestamp_start"]
-
-    record_id = record.get("record_id", "")
-    if record_id:
-        meta["record_id"] = record_id
-
-    return meta
+# -------------------------------------------------------------------------
+# Records into the code_use collection
+# -------------------------------------------------------------------------
 
 
 def index_trace_archive(
@@ -697,9 +696,104 @@ class CodeUseIndexer:
         return self.tick(source="code_use")
 
 
-# ---------------------------------------------------------------------------
-# Pipeline reconstruction
-# ---------------------------------------------------------------------------
+def render_execution_text(record: dict) -> str:
+    """Convert a code execution record into embeddable natural-language text."""
+    code_name = record.get("code_name", "unknown")
+    execution = record.get("execution")
+
+    parts = [f"Code: {code_name}"]
+
+    if execution and execution.get("exact_command"):
+        cmd = execution["exact_command"]
+        if isinstance(cmd, list):
+            cmd = " ".join(cmd)
+        parts.append(f"Command: {cmd}")
+
+    if execution and execution.get("return_code") is not None:
+        rc = execution["return_code"]
+        status = "succeeded" if rc == 0 else f"failed (exit code {rc})"
+        parts.append(f"Outcome: {status}")
+
+    if execution:
+        start = execution.get("timestamp_start", "")
+        end = execution.get("timestamp_end", "")
+        if start and end:
+            parts.append(f"Duration: {start} to {end}")
+
+    if execution and execution.get("input_files"):
+        parts.append(f"Input files: {', '.join(execution['input_files'])}")
+    if execution and execution.get("output_files"):
+        parts.append(f"Output files: {', '.join(execution['output_files'])}")
+
+    if execution and execution.get("stderr"):
+        stderr = execution["stderr"].strip()
+        if stderr:
+            if len(stderr) > 300:
+                stderr = stderr[:300] + "..."
+            parts.append(f"Stderr: {stderr}")
+
+    return "\n".join(parts)
+
+
+def execution_metadata(record: dict) -> dict:
+    """Extract ChromaDB-filterable metadata from a code execution record."""
+    execution = record.get("execution")
+
+    meta: dict = {}
+    meta["code_name"] = record.get("code_name") or "unknown"
+    # A code run outside a minted session stores session_id: null, and ChromaDB
+    # rejects a null metadata value, which would fail the whole batch add and
+    # re-fail every pass.  Coerce null to "unknown".
+    meta["session_id"] = record.get("session_id") or "unknown"
+
+    if execution and execution.get("return_code") is not None:
+        meta["return_code"] = execution["return_code"]
+
+    if execution and execution.get("timestamp_start"):
+        meta["timestamp"] = execution["timestamp_start"]
+
+    record_id = record.get("record_id", "")
+    if record_id:
+        meta["record_id"] = record_id
+
+    return meta
+
+
+# -------------------------------------------------------------------------
+# Records into a script
+# -------------------------------------------------------------------------
+
+
+def reconstruct_pipeline(
+    trace_dir: Path,
+    session_id: str | None = None,
+    fmt: str = "bash",
+) -> str:
+    """Reconstruct a pipeline from execution records.
+
+    Parameters
+    ----------
+    trace_dir : Path
+        Path to the trace_archive directory.
+    session_id : str, optional
+        Filter records to a specific session.
+    fmt : str
+        Output format: "bash" or "snakemake".
+
+    Returns
+    -------
+    str
+        The rendered pipeline script.
+    """
+    records = load_pipeline_records(trace_dir, session_id)
+    if not records:
+        return f"# No execution records found{' for session ' + session_id if session_id else ''}\n"
+
+    deps = build_dependency_graph(records)
+
+    if fmt == "snakemake":
+        return render_snakemake(records, deps)
+    return render_bash(records, deps, project_dir=Path(trace_dir).resolve().parent)
 
 
 def load_pipeline_records(trace_dir: Path, session_id: str | None = None) -> list[dict]:
@@ -733,56 +827,6 @@ def load_pipeline_records(trace_dir: Path, session_id: str | None = None) -> lis
     return records
 
 
-def readiness_reports(project_dir: Path, path: str) -> list[dict]:
-    """The AI-readiness reports on record for *path*, newest first.
-
-    Reads the ``aidrin`` records under ``<project>/trace_archive/`` whose
-    inputs name *path* (given relative to the project, or absolute under it)
-    and gives, per run, the record's id, the report (what the run printed,
-    which the record holds in full), the run's start time, and whether the
-    file's content is what it was at the run (``unchanged``), from the
-    record's hash against the file now.  The readiness paragraph asks the
-    agent to call this before a check, so the report after one stage is the
-    report before the next.  A record with no
-    hash for the file, from a run before hashes were recorded, reports
-    ``unchanged`` as ``None``.
-    """
-    project_dir = Path(project_dir)
-    target = _relative_to_project(path, project_dir)
-    current = sha256_of(str(project_dir / target))
-    reports = []
-    for record in load_pipeline_records(project_dir / "trace_archive"):
-        if record.get("code_name") != "aidrin":
-            continue
-        execution = record["execution"]
-        inputs = [
-            _relative_to_project(f, project_dir)
-            for f in execution.get("input_files", [])
-        ]
-        if target not in inputs:
-            continue
-        recorded = execution.get("file_hashes", {})
-        digest = next(
-            (
-                h
-                for f, h in recorded.items()
-                if _relative_to_project(f, project_dir) == target
-            ),
-            None,
-        )
-        reports.append(
-            {
-                "record_id": record["record_id"],
-                "report": execution.get("stdout", ""),
-                "timestamp": execution.get("timestamp_start"),
-                "command": " ".join(execution.get("exact_command", [])),
-                "unchanged": None if digest is None else digest == current,
-            }
-        )
-    reports.reverse()
-    return reports
-
-
 def build_dependency_graph(records: list[dict]) -> dict[int, list[int]]:
     """Build a dependency graph from input/output file overlap."""
     output_to_step: dict[str, int] = {}
@@ -799,18 +843,6 @@ def build_dependency_graph(records: list[dict]) -> dict[int, list[int]]:
                     deps[i].append(producer)
 
     return deps
-
-
-def _relative_to_project(arg: str, project_dir: Path | None) -> str:
-    """*arg* with a leading *project_dir* removed, so the script runs from the project."""
-    if project_dir is None:
-        return arg
-    root = str(project_dir)
-    if arg == root:
-        return "."
-    if arg.startswith(root + "/"):
-        return arg[len(root) + 1 :]
-    return arg
 
 
 def render_bash(
@@ -938,6 +970,18 @@ def render_snakemake(records: list[dict], deps: dict[int, list[int]]) -> str:
     return "\n".join(lines)
 
 
+def _relative_to_project(arg: str, project_dir: Path | None) -> str:
+    """*arg* with a leading *project_dir* removed, so the script runs from the project."""
+    if project_dir is None:
+        return arg
+    root = str(project_dir)
+    if arg == root:
+        return "."
+    if arg.startswith(root + "/"):
+        return arg[len(root) + 1 :]
+    return arg
+
+
 def _shell_quote(s: str) -> str:
     """Quote a string for shell if it contains special characters."""
     if not s:
@@ -948,33 +992,51 @@ def _shell_quote(s: str) -> str:
     return "'" + s.replace("'", "'\\''") + "'"
 
 
-def reconstruct_pipeline(
-    trace_dir: Path,
-    session_id: str | None = None,
-    fmt: str = "bash",
-) -> str:
-    """Reconstruct a pipeline from execution records.
+def readiness_reports(project_dir: Path, path: str) -> list[dict]:
+    """The AI-readiness reports on record for *path*, newest first.
 
-    Parameters
-    ----------
-    trace_dir : Path
-        Path to the trace_archive directory.
-    session_id : str, optional
-        Filter records to a specific session.
-    fmt : str
-        Output format: "bash" or "snakemake".
-
-    Returns
-    -------
-    str
-        The rendered pipeline script.
+    Reads the ``aidrin`` records under ``<project>/trace_archive/`` whose
+    inputs name *path* (given relative to the project, or absolute under it)
+    and gives, per run, the record's id, the report (what the run printed,
+    which the record holds in full), the run's start time, and whether the
+    file's content is what it was at the run (``unchanged``), from the
+    record's hash against the file now.  The readiness paragraph asks the
+    agent to call this before a check, so the report after one stage is the
+    report before the next.  A record with no
+    hash for the file, from a run before hashes were recorded, reports
+    ``unchanged`` as ``None``.
     """
-    records = load_pipeline_records(trace_dir, session_id)
-    if not records:
-        return f"# No execution records found{' for session ' + session_id if session_id else ''}\n"
-
-    deps = build_dependency_graph(records)
-
-    if fmt == "snakemake":
-        return render_snakemake(records, deps)
-    return render_bash(records, deps, project_dir=Path(trace_dir).resolve().parent)
+    project_dir = Path(project_dir)
+    target = _relative_to_project(path, project_dir)
+    current = sha256_of(str(project_dir / target))
+    reports = []
+    for record in load_pipeline_records(project_dir / "trace_archive"):
+        if record.get("code_name") != "aidrin":
+            continue
+        execution = record["execution"]
+        inputs = [
+            _relative_to_project(f, project_dir)
+            for f in execution.get("input_files", [])
+        ]
+        if target not in inputs:
+            continue
+        recorded = execution.get("file_hashes", {})
+        digest = next(
+            (
+                h
+                for f, h in recorded.items()
+                if _relative_to_project(f, project_dir) == target
+            ),
+            None,
+        )
+        reports.append(
+            {
+                "record_id": record["record_id"],
+                "report": execution.get("stdout", ""),
+                "timestamp": execution.get("timestamp_start"),
+                "command": " ".join(execution.get("exact_command", [])),
+                "unchanged": None if digest is None else digest == current,
+            }
+        )
+    reports.reverse()
+    return reports

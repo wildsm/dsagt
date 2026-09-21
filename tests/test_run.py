@@ -940,3 +940,20 @@ def test_the_script_behind_a_uv_wrapper_is_neither_input_nor_output(
     ]
     assert files_from_arguments(command) == ["card.md"]
     assert new_files_from_arguments(command, ["card.md"]) == []
+
+
+def test_the_dsagt_run_path_imports_nothing_heavy():
+    """dsagt-run pays provenance's import on every recorded command, so the
+    retrieval stack stays behind TYPE_CHECKING and function-scope imports."""
+    import subprocess
+    import sys
+
+    probe = (
+        "import dsagt.provenance, sys; "
+        "print([m for m in ('chromadb', 'torch', 'onnxruntime', 'mlflow') "
+        "if m in sys.modules])"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert done.stdout.strip() == "[]"
