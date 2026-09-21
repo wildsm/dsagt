@@ -462,15 +462,13 @@ class TestInitProject:
     def test_readiness_answer_is_written_as_given(self):
         """The check setting is a config block written as answered; the
         ``aidrin`` code itself comes from the base-skill registration."""
-        from dsagt.readiness import readiness_block
-
         init_project("plain", "claude", exclude=["all"])
         assert "readiness" not in load_config("plain")
 
         for answer in (True, False):
             name = f"assessed-{answer}"
             init_project(
-                name, "claude", exclude=["all"], readiness=readiness_block(answer)
+                name, "claude", exclude=["all"], readiness={"auto_assess": answer}
             )
             assert load_config(name)["readiness"] == {"auto_assess": answer}
 
@@ -698,10 +696,8 @@ class TestAgentRecord:
     def test_readiness_paragraph_at_the_check_rule(self, tmp_path):
         """With the check on, the instructions carry the AI-readiness paragraph
         inside the per-operation check rule; re-running changes nothing."""
-        from dsagt.readiness import readiness_block
-
         init_project(
-            "testproj", "claude", exclude=["all"], readiness=readiness_block(True)
+            "testproj", "claude", exclude=["all"], readiness={"auto_assess": True}
         )
         config = load_config("testproj")
         working_dir = tmp_path / "workdir"
@@ -718,9 +714,7 @@ class TestAgentRecord:
         assert (working_dir / "CLAUDE.md").read_text() == text
 
     def test_no_readiness_paragraph_when_off(self, tmp_path):
-        from dsagt.readiness import readiness_block
-
-        init_project("off", "claude", exclude=["all"], readiness=readiness_block(False))
+        init_project("off", "claude", exclude=["all"], readiness={"auto_assess": False})
         config = load_config("off")
         working_dir = tmp_path / "workdir"
         working_dir.mkdir()
@@ -838,9 +832,7 @@ class TestAgentRecord:
         """Turning the AI-readiness check off on re-init reaches the
         instructions file: the dsagt block is replaced, and the user's own
         text before and after it is kept."""
-        from dsagt.readiness import readiness_block
-
-        init_project("tog", "claude", exclude=["all"], readiness=readiness_block(True))
+        init_project("tog", "claude", exclude=["all"], readiness={"auto_assess": True})
         working_dir = tmp_path / "workdir"
         working_dir.mkdir()
         (working_dir / "CLAUDE.md").write_text("# Team notes\n\nBe brief.\n")
@@ -850,7 +842,7 @@ class TestAgentRecord:
         )
         assert "#### AI-readiness check" in (working_dir / "CLAUDE.md").read_text()
 
-        init_project("tog", "claude", exclude=["all"], readiness=readiness_block(False))
+        init_project("tog", "claude", exclude=["all"], readiness={"auto_assess": False})
         actions = static_agent_record(load_config("tog"), "claude", working_dir)
         text = (working_dir / "CLAUDE.md").read_text()
         assert actions == [f"Updated DSAgt instructions in {working_dir / 'CLAUDE.md'}"]

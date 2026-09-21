@@ -11,10 +11,6 @@ from dsagt.agents.base import _load_master_instructions
 
 class TestConfigBlock:
 
-    def test_block_holds_the_one_setting(self):
-        assert rd.readiness_block(True) == {"auto_assess": True}
-        assert rd.readiness_block(False) == {"auto_assess": False}
-
     def test_enabled_reads_the_block_and_defaults_on(self):
         assert rd.auto_assess_enabled({}) is True
         assert rd.auto_assess_enabled({"readiness": {"auto_assess": False}}) is False

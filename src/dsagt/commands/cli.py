@@ -159,13 +159,6 @@ def _episodic_block(enabled: bool) -> dict | None:
     return {"enabled": True}
 
 
-def _readiness_block(auto_assess: bool) -> dict:
-    """The ``readiness`` config block for the user's answer."""
-    from dsagt.readiness import readiness_block
-
-    return readiness_block(auto_assess)
-
-
 def _collect_settings(args, interactive: bool, existing: dict, pdir: Path | None):
     """Resolve the init choices (the 1:1 mirror of the config).
 
@@ -228,7 +221,7 @@ def _collect_settings(args, interactive: bool, existing: dict, pdir: Path | None
             "transform? (the AIDRIN quality baseline, recorded like any code)",
             default=auto_assess_enabled(existing),
         )
-        readiness = _readiness_block(auto_assess)
+        readiness = {"auto_assess": auto_assess}
     else:
         agent = args.agent or existing.get("agent")
         if not agent:
@@ -241,7 +234,7 @@ def _collect_settings(args, interactive: bool, existing: dict, pdir: Path | None
         # off.  Re-pass it on re-init: like --include/--exclude, flags are
         # authoritative on the non-interactive path.
         episodic = _episodic_block(getattr(args, "episodic", False))
-        readiness = _readiness_block(getattr(args, "readiness", True))
+        readiness = {"auto_assess": bool(getattr(args, "readiness", True))}
 
     return {
         "agent": agent,

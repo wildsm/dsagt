@@ -42,7 +42,6 @@ from dsagt.observability import (
     registry_save_code_span,
 )
 from dsagt.provenance import CodeUseIndexer, readiness_reports, reconstruct_pipeline
-from dsagt.readiness import NO_REPORT
 from dsagt.registry import CODES_COLLECTION, CodeRegistry
 
 logger = logging.getLogger(__name__)
@@ -262,7 +261,10 @@ async def _handle_readiness_reports(arguments: dict, *, runtime_dir: Path) -> di
         "earlier": [r for r in reports if r is not current],
     }
     if current is None:
-        reply["next"] = "There is " + NO_REPORT.format(path=path)
+        reply["next"] = (
+            f"There is no readiness report for {path} at its current content. "
+            "Check it with the aidrin skill, through the registered aidrin code."
+        )
     return reply
 
 
