@@ -52,18 +52,16 @@ CODE_USE_COLLECTION = "code_use"
 # ---------------------------------------------------------------------------
 
 
-def _resolve_records_dir(explicit: str | None) -> Path:
-    """Determine the records directory.
+def _resolve_records_dir() -> Path:
+    """The project's ``trace_archive/``.
 
-    Priority: explicit ``--records-dir`` flag → ``$DSAGT_PROJECT_DIR``
-    (exported by ``dsagt start`` and the MCP env block) → the cwd.  The
-    directory must hold ``.dsagt/config.yaml``, the project config
-    ``dsagt init`` writes.  The project is a fixed place, the agent's
-    working directory, so the directory is checked as given: a ``cd`` into
-    a subdirectory before the command is the error, and the message names it.
+    ``$DSAGT_PROJECT_DIR`` (exported by ``dsagt start`` and the MCP env
+    block) names the project, and the working directory is it otherwise.  The
+    directory must hold ``.dsagt/config.yaml``, the project config ``dsagt
+    init`` writes.  The project is a fixed place, the agent's working
+    directory, so the directory is checked as given: a ``cd`` into a
+    subdirectory before the command is the error, and the message names it.
     """
-    if explicit:
-        return Path(explicit)
     env_dir = os.environ.get("DSAGT_PROJECT_DIR")
     if env_dir:
         project, source = Path(env_dir).resolve(), "DSAGT_PROJECT_DIR"
@@ -72,7 +70,7 @@ def _resolve_records_dir(explicit: str | None) -> Path:
     if not (project / ".dsagt" / "config.yaml").exists():
         raise ValueError(
             f"{source} ({project}) is not a dsagt project: no .dsagt/config.yaml. "
-            "Run dsagt-run from the project directory, or pass --records-dir."
+            "Run dsagt-run from the project directory."
         )
     return project / "trace_archive"
 

@@ -50,6 +50,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`dsagt-run` takes one option.** `--code` names the registered code and
+  the command follows `--`. `--input-files`, `--output-files`, `--session`,
+  `--record-id` and `--records-dir` are gone: no agent command ever used
+  them, and each value is derived (the project from `DSAGT_PROJECT_DIR` or
+  the working directory, the session from `.dsagt/state.yaml`, the record id
+  from the run, the files from the spec's roles and the arguments). The trace
+  logger is `python -m dsagt.commands.log_trace <record>`, which takes the
+  session from the record.
 - **`dsagt-run` adds about 0.2 s to a command, down from 1.3 to 2 s.** The
   run loads no trace store. It writes the record, then starts a detached
   process that logs the `code.execute` trace from the record with the run's
