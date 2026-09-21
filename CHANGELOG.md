@@ -137,6 +137,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`search_skills` describes the catalogs it searches.** Its description said
+  it spanned installed skills; an installed skill is discovered natively and
+  is not indexed, so the search covers the synced external catalogs, and the
+  description gives the marker each hit carries.
 - **A second `save_skill` keeps the spec the agent saved.** The argparse-derived
   spec replaced one that `save_code_spec` had given dependencies or roles;
   it is now written only when the code does not exist, and `save_code_spec`
