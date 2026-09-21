@@ -164,8 +164,7 @@ The merge and the curation are the two data operations on the particle tables, s
 asks for them as registered codes: each run is then an execution record, and the AI-readiness
 check has something to measure. The check runs on the ground-truth tables as they arrive and
 on the output of each transformation: the derived metadata, the scored table, `particles.csv`,
-and `particles_curated.csv`. Each check's execution record holds the report, and `dsagt-run`
-refuses a check that repeats one already on record for that file's current content. The gain
+and `particles_curated.csv`. Each check's execution record holds the report. The gain
 post-condition 4 is judged on is in the particle tables. Expected across the curation step:
 
 | Metric | before → after | Reading |

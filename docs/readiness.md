@@ -20,9 +20,8 @@ The inserted paragraph:
 > HDF5, or NumPy file may hold nested or multi-dataset structure that the
 > baseline reads as one flat table; say so beside the numbers when you report
 > them. The run's execution record holds the report, and `readiness_reports`
-> returns the one on record for a file; `dsagt-run` refuses a check that
-> repeats one already on record for that file's current content. Report the
-> per-metric change to the user before proposing the next step, comparing a
+> returns the one on record for a file. Report the per-metric change to the
+> user before proposing the next step, comparing a
 > table with its own earlier report or with the report of the table it was made
 > from. Do not write a custom check for a metric AIDRIN provides. A stage with
 > a tabular input or output gets this check; every other stage keeps the check

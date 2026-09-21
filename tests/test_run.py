@@ -990,39 +990,3 @@ def test_the_script_behind_a_uv_wrapper_is_neither_input_nor_output(
     ]
     assert files_from_arguments(command) == ["card.md"]
     assert new_files_from_arguments(command, ["card.md"]) == []
-
-
-class TestRefusesARepeatedCheck:
-
-    def _run(self, tmp_path, monkeypatch, capsys, auto_assess=True):
-        (tmp_path / ".dsagt").mkdir(exist_ok=True)
-        (tmp_path / ".dsagt" / "config.yaml").write_text(
-            f"project: t\nreadiness:\n  auto_assess: {str(auto_assess).lower()}\n"
-        )
-        (tmp_path / "data").mkdir(exist_ok=True)
-        (tmp_path / "data" / "t.csv").write_text("a\n1\n")
-        monkeypatch.chdir(tmp_path)
-        argv = [
-            "--code",
-            "aidrin",
-            "--records-dir",
-            str(tmp_path / "trace_archive"),
-            "--",
-            "head",
-            "-1",
-            "data/t.csv",
-        ]
-        first = main(argv)
-        second = main(argv)
-        return first, second, capsys.readouterr().err
-
-    def test_the_second_identical_check_is_refused(self, tmp_path, monkeypatch, capsys):
-        first, second, err = self._run(tmp_path, monkeypatch, capsys)
-        assert first == 0 and second == 2
-        assert "already on record" in err
-        assert len(list((tmp_path / "trace_archive").glob("*.json"))) == 1
-
-    def test_the_check_being_off_allows_the_repeat(self, tmp_path, monkeypatch, capsys):
-        first, second, _ = self._run(tmp_path, monkeypatch, capsys, auto_assess=False)
-        assert first == 0 and second == 0
-        assert len(list((tmp_path / "trace_archive").glob("*.json"))) == 2
