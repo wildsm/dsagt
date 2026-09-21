@@ -1,20 +1,17 @@
 """
-The project's skills directory, and the two ways dsagt reads it.
+Agent capabilities: the project's skills directory and its two registries.
 
-A project keeps everything the agent can use in one place,
-``<project>/skills/``, with a directory per entry.  Each holds a ``SKILL.md``
-whose YAML frontmatter gives its name and description, plus any scripts and
-reference documents.  Some entries are instructions the agent reads and
-follows.  Others also name an ``executable`` in that frontmatter, a command
-line the agent can run; those are what dsagt calls codes.  ``CodeRegistry``
-reads the entries that name one, ``SkillRegistry`` reads them all, and each
-writes what it reads.
+A project stores and extends agent capabilities in ``<project>/skills/``.
+Each entry's directory holds a ``SKILL.md`` whose YAML frontmatter gives its
+name and description, plus any scripts and reference documents.  Some entries
+are instructions the agent reads and follows.  Others also name an
+``executable`` in that frontmatter, a command line (code) the agent can run.
+``CodeRegistry`` reads/writes skills with associated codes whereas
+``SkillRegistry`` reads/writes general purpose instructions/workflows.
 
-Both kinds share the directory because that is how the agent finds them
-without asking.  Claude Code, Codex and the rest each discover skills from a
-directory of their own, and ``AgentSetup.setup_skills`` links this one there,
-so a code's command is in the agent's context at invocation, without a
-search.
+Claude Code, Codex and the rest each discover skills from a directory of
+their own, and ``AgentSetup.setup_skills`` links ``<project>/skills/`` there,
+so registered codes/skills are in the agent's context at invocation.
 
 The ``executable`` is stored as the whole command line rather than the
 program alone::
@@ -22,9 +19,8 @@ program alone::
     dsagt-run --code <name> -- [uv run --with <deps> --] <command>
 
 Execution belongs to the agent's own shell, outside anything dsagt mediates,
-so the wrapper that writes the execution record is part of the stored string.
-``save_tool`` writes that string, and every tool that returns a code returns
-it verbatim.
+so the dsagt-run wrapper that writes the execution record is part of the
+stored string.
 
     CodeRegistry  ◇── knowledge.KnowledgeBase   (the `codes` collection)
     SkillRegistry ◇── knowledge.KnowledgeBase   (a catalog collection)
